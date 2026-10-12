@@ -11,6 +11,7 @@ from discord import app_commands
 from discord.ext import commands
 
 from bot.cogs.system import INVITE_URL, SUPPORT_SERVER
+from bot.services.users import GlobalUser, GuildMember
 
 
 def _fmt_dt(dt: datetime.datetime | None) -> str:
@@ -33,13 +34,20 @@ class Info(commands.Cog, name="info"):
 
     # ── userinfo ──────────────────────────────────────────────────────────────
     @commands.command(name="userinfo", aliases=["whois", "ui", "id"])
-    async def userinfo(self, ctx: commands.Context, member: discord.Member | None = None) -> None:
-        """Get detailed info about a user. Usage: alpha userinfo [@user]"""
-        member = member or ctx.author
-        if ctx.guild is None:
-            embed = self._make_embed("❌ Not in Server", 0xE74C3C, "This command only works in a server.")
-            await ctx.send(embed=embed)
-            return
+    async def userinfo(self, ctx: commands.Context, user: GlobalUser | None = None) -> None:
+        """Get detailed info about a user. Usage: alpha userinfo [@user | ID]"""
+        target = user or ctx.author
+        member = target if isinstance(target, discord.Member) else (
+            ctx.guild.get_member(target.id) if ctx.guild is not None else None
+        )
+        if member is not None:
+            await ctx.send(embed=self._member_info_embed(member, ctx))
+        else:
+            await ctx.send(embed=self._user_info_embed(target, ctx))
+
+    def _member_info_embed(
+        self, member: discord.Member, ctx: commands.Context
+    ) -> discord.Embed:
         roles = [r.mention for r in member.roles if r != ctx.guild.default_role]
 
         status_emojis = {
@@ -73,7 +81,24 @@ class Info(commands.Cog, name="info"):
         roles_text = ", ".join(roles[:15]) if roles else "None"
         embed.add_field(name=f"🎭 Roles [{len(roles)}]", value=roles_text, inline=False)
         embed.set_footer(text=f"Requested by {ctx.author}")
-        await ctx.send(embed=embed)
+        return embed
+
+    def _user_info_embed(self, user: discord.User, ctx: commands.Context) -> discord.Embed:
+        """Profile for someone who is not a member of this server (ID lookup)."""
+        embed = discord.Embed(color=0x7289DA)
+        embed.set_author(name=f"👤 {user}", icon_url=user.display_avatar.url)
+        embed.set_thumbnail(url=user.display_avatar.url)
+        embed.add_field(name="📛 Username", value=str(user), inline=True)
+        embed.add_field(name="🆔 ID", value=str(user.id), inline=True)
+        embed.add_field(name="🤖 Bot", value="Yes" if user.bot else "No", inline=True)
+        embed.add_field(name="📅 Account Created", value=_fmt_dt(user.created_at), inline=True)
+        embed.add_field(
+            name="ℹ️ Not a member",
+            value="This user is not in this server — showing global profile only.",
+            inline=False,
+        )
+        embed.set_footer(text=f"Requested by {ctx.author}")
+        return embed
 
     # ── serverinfo ────────────────────────────────────────────────────────────
     @commands.command(name="serverinfo", aliases=["guildinfo", "server", "si", "df"])
@@ -111,16 +136,16 @@ class Info(commands.Cog, name="info"):
 
     # ── avatar ────────────────────────────────────────────────────────────────
     @commands.command(name="avatar", aliases=["pfp", "av"])
-    async def avatar(self, ctx: commands.Context, member: discord.Member | None = None) -> None:
-        """View a user's profile picture. Usage: alpha avatar [@user]"""
-        member = member or ctx.author
+    async def avatar(self, ctx: commands.Context, user: GlobalUser | None = None) -> None:
+        """View a user's profile picture. Usage: alpha avatar [@user | ID]"""
+        user = user or ctx.author
         embed = discord.Embed(color=0xE74C3C)
-        embed.set_author(name=f"🖼️ {member.display_name}'s Avatar", icon_url=member.display_avatar.url)
-        embed.set_image(url=member.display_avatar.url)
+        embed.set_author(name=f"🖼️ {user.display_name}'s Avatar", icon_url=user.display_avatar.url)
+        embed.set_image(url=user.display_avatar.url)
         links = (
-            f"[PNG]({member.display_avatar.replace(format='png').url})  "
-            f"[JPG]({member.display_avatar.replace(format='jpg').url})  "
-            f"[WEBP]({member.display_avatar.replace(format='webp').url})"
+            f"[PNG]({user.display_avatar.replace(format='png').url})  "
+            f"[JPG]({user.display_avatar.replace(format='jpg').url})  "
+            f"[WEBP]({user.display_avatar.replace(format='webp').url})"
         )
         embed.add_field(name="📥 Download", value=links, inline=False)
         embed.set_footer(text=f"Requested by {ctx.author}")
@@ -128,17 +153,17 @@ class Info(commands.Cog, name="info"):
 
     # ── banner ────────────────────────────────────────────────────────────────
     @commands.command(name="banner")
-    async def banner(self, ctx: commands.Context, member: discord.Member | None = None) -> None:
-        """View a user's profile banner. Usage: alpha banner [@user]"""
-        member = member or ctx.author
-        fetched = await self.bot.fetch_user(member.id)
+    async def banner(self, ctx: commands.Context, user: GlobalUser | None = None) -> None:
+        """View a user's profile banner. Usage: alpha banner [@user | ID]"""
+        user = user or ctx.author
+        fetched = await self.bot.fetch_user(user.id)
         if not fetched.banner:
             embed = self._make_embed("🎨 No Banner", 0x95A5A6)
-            embed.description = f"{member} has no banner set"
+            embed.description = f"{user} has no banner set"
             await ctx.send(embed=embed)
             return
         embed = discord.Embed(color=fetched.accent_color or 0x7289DA)
-        embed.set_author(name=f"🎨 {member.display_name}'s Banner", icon_url=member.display_avatar.url)
+        embed.set_author(name=f"🎨 {user.display_name}'s Banner", icon_url=user.display_avatar.url)
         embed.set_image(url=fetched.banner.url)
         await ctx.send(embed=embed)
 
@@ -237,8 +262,8 @@ class Info(commands.Cog, name="info"):
 
     # ── perms ─────────────────────────────────────────────────────────────────
     @commands.command(name="perms", aliases=["permissions"])
-    async def perms(self, ctx: commands.Context, member: discord.Member | None = None) -> None:
-        """View a user's server permissions. Usage: alpha perms [@user]"""
+    async def perms(self, ctx: commands.Context, member: GuildMember | None = None) -> None:
+        """View a user's server permissions. Usage: alpha perms [@user | ID]"""
         member = member or ctx.author
         granted = [p.replace("_", " ").title() for p, v in member.guild_permissions if v]
         denied  = [p.replace("_", " ").title() for p, v in member.guild_permissions if not v]

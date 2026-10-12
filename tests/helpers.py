@@ -65,7 +65,12 @@ def make_member(
     member.bot = bot
     member.guild = guild
     member.guild_permissions = permissions if permissions is not None else make_permissions()
-    member.display_avatar = SimpleNamespace(url=f"https://cdn.example/{user_id}.png")
+    member.display_avatar = MagicMock()
+    member.display_avatar.url = f"https://cdn.example/{user_id}.png"
+    member.display_avatar.replace = MagicMock(
+        side_effect=lambda **kw: SimpleNamespace(url=f"https://cdn.example/{user_id}.{kw.get('format', 'png')}")
+    )
+    member.__str__ = lambda self: self.name
     member.voice = None if voice_channel is None else SimpleNamespace(channel=voice_channel)
     member.add_roles = AsyncMock()
     member.move_to = AsyncMock()

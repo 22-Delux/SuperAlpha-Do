@@ -8,6 +8,7 @@ Commands: 8ball, coinflip, roll, rps, joke, quote, ascii, mock, reverse,
 import discord
 from discord import app_commands
 from discord.ext import commands
+from bot.services.users import GlobalUser
 from typing import cast
 import random
 import asyncio
@@ -399,11 +400,11 @@ class Fun(commands.Cog, name="fun"):
 
     # ── pat ──────────────────────────────────────────────────────────────────
     @commands.command(name="pat")
-    async def pat(self, ctx: commands.Context, member: discord.Member = None) -> None:
-        """Pat someone with a cute penguin! Usage: alpha pat [@user]"""
+    async def pat(self, ctx: commands.Context, member: GlobalUser | None = None) -> None:
+        """Pat someone with a cute penguin! Usage: alpha pat [@user|id]"""
         if not member:
             embed = self._make_embed("❌ No Target", 0xE74C3C)
-            embed.description = "Mention someone to pat!"
+            embed.description = "Mention someone (or give their ID) to pat!"
             await ctx.send(embed=embed)
             return
         
