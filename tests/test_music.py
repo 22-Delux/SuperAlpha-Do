@@ -120,12 +120,14 @@ async def test_requeue_finished_modes(bot):
 
 def test_loop_state_label(bot):
     cog = Music(bot)
-    player = cog._get_player(1001)
-    assert cog._loop_state(player) == "OFF"
+    bot.add_cog(cog)
+    player = music_cog.GuildPlayer(1)
+    assert cog._loop_state(player) == "➡️ OFF"
     player.loop = True
-    assert cog._loop_state(player) == "ON — single"
+    assert cog._loop_state(player) == "🔂 ON — Single (repeat track)"
+    player.loop = False
     player.queue_loop = True
-    assert cog._loop_state(player) == "ON — queue"
+    assert cog._loop_state(player) == "🔁 ON — Queue (repeat all)"
 
 
 async def test_loop_no_arg_toggles_single_track(bot):

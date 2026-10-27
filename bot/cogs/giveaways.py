@@ -16,6 +16,8 @@ import discord
 from discord.ext import commands
 
 from bot.cogs.checks import perms_or_developer
+from bot.services.embeds import giveaway_embed, brand_embed, success_embed, info_embed, COLOR_GIVEAWAY
+from bot.services.users import GlobalUser, GuildMember
 
 DATA_DIR = "data/giveaways"
 DATA_FILE = os.path.join(DATA_DIR, "giveaways.json")
@@ -116,7 +118,7 @@ class Giveaways(commands.Cog, name="giveaways"):
 
     @commands.command(name="giveaway")
     async def giveaway(self, ctx: commands.Context, action: str = None, *, rest: str = None) -> None:
-        """Run giveaways. Usage: alpha giveaway [create|end|reroll|cancel|list]"""
+        """Run giveaways. Usage: sudo giveaway [create|end|reroll|cancel|list]"""
         if not action:
             data = self._load()
             active = [gw for gw in data.values() if gw.get("guild_id") == ctx.guild.id]
@@ -152,9 +154,9 @@ class Giveaways(commands.Cog, name="giveaways"):
         else:
             embed = self._make_embed(
                 "❌ Invalid Action", 0xE74C3C,
-                "Usage: `alpha giveaway create #channel <time> [winners] <prize>`\n"
-                "`alpha giveaway end <message-id>` · `alpha giveaway reroll <message-id>`\n"
-                "`alpha giveaway cancel <message-id>` · `alpha giveaway list`",
+                "Usage: `sudo giveaway create #channel <time> [winners] <prize>`\n"
+                "`sudo giveaway end <message-id>` · `sudo giveaway reroll <message-id>`\n"
+                "`sudo giveaway cancel <message-id>` · `sudo giveaway list`",
             )
             await ctx.send(embed=embed)
 
@@ -165,7 +167,7 @@ class Giveaways(commands.Cog, name="giveaways"):
             return
 
         if not rest:
-            embed = self._make_embed("❌ Missing Args", 0xE74C3C, "Usage: `alpha giveaway create #channel <time> [winners] <prize>`")
+            embed = self._make_embed("❌ Missing Args", 0xE74C3C, "Usage: `sudo giveaway create #channel <time> [winners] <prize>`")
             await ctx.send(embed=embed)
             return
 
@@ -250,7 +252,7 @@ class Giveaways(commands.Cog, name="giveaways"):
             return
 
         if not rest:
-            embed = self._make_embed("❌ Missing Message ID", 0xE74C3C, "Usage: `alpha giveaway reroll <message-id>`")
+            embed = self._make_embed("❌ Missing Message ID", 0xE74C3C, "Usage: `sudo giveaway reroll <message-id>`")
             await ctx.send(embed=embed)
             return
         try:
@@ -302,7 +304,7 @@ class Giveaways(commands.Cog, name="giveaways"):
 
     async def _find_by_message_id(self, ctx: commands.Context, rest: str | None):
         if not rest:
-            embed = self._make_embed("❌ Missing Message ID", 0xE74C3C, "Usage: `alpha giveaway end <message-id>`")
+            embed = self._make_embed("❌ Missing Message ID", 0xE74C3C, "Usage: `sudo giveaway end <message-id>`")
             await ctx.send(embed=embed)
             return None
         try:

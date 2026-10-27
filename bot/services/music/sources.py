@@ -11,9 +11,13 @@ import os
 import re
 import time
 from concurrent.futures import ProcessPoolExecutor
+from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
 import aiohttp
 import yt_dlp
+
+# Resolve cookies.txt against the repo root so it works regardless of cwd.
+COOKIES_FILE = str(Path(__file__).resolve().parents[3] / "cookies.txt")
 
 BASE_YTDL_OPTS = {
     "format": "bestaudio/best",
@@ -22,12 +26,19 @@ BASE_YTDL_OPTS = {
     "default_search": "ytsearch",
     "noplaylist": True,
     "extract_flat": False,
-    "socket_timeout": 20,
+    "socket_timeout": 30,
+    # Rotate through multiple YouTube players so a bot-checked web client
+    # doesn't block playback (mobile/embedded clients are usually allowed).
+    "extractor_args": {
+        "youtube": {
+            "player_client": ["TV_EMBED", "WEB_EMBED", "TV", "MWEB", "IOS", "ANDROID"],
+        },
+    },
     "http_headers": {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
         "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-        "Accept-Language": "en-US,en;q=0.5",
-        "Accept-Encoding": "gzip, deflate",
+        "Accept-Language": "en-US,en;q=0.9",
+        "Accept-Encoding": "gzip, deflate, br",
         "Connection": "keep-alive",
     },
     "js_runtimes": {"node": {"cmd": ["node"]}},
@@ -61,18 +72,39 @@ atexit.register(shutdown_ytdl_pool)
 
 def _ytdl_extract(query: str, opts: dict) -> dict | None:
     """Picklable worker: run yt-dlp extract_info in a child process."""
-    with yt_dlp.YoutubeDL(opts) as ytdl:
-        return ytdl.extract_info(query, download=False)
+    try:
+        with yt_dlp.YoutubeDL(opts) as ytdl:
+            return ytdl.extract_info(query, download=False)
+    except Exception as exc:
+        # Strip the traceback/exc_info chain before it crosses the process
+        # boundary — exceptions with tracebacks can't be pickled, which would
+        # surface as "cannot pickle 'traceback' object" instead of the real
+        # yt-dlp message.
+        raise RuntimeError(str(exc)) from None
 
 
 def get_ytdl_opts() -> dict:
     opts = BASE_YTDL_OPTS.copy()
-    cookies_file = "cookies.txt"
-    if os.path.exists(cookies_file):
-        if os.path.getsize(cookies_file) > 0:
-            opts["cookiefile"] = cookies_file
-        else:
-            print("Warning: cookies.txt exists but is empty")
+    opts["extractor_args"] = {k: dict(v) for k, v in opts.get("extractor_args", {}).items()}
+    use_cookies = os.path.exists(COOKIES_FILE) and os.path.getsize(COOKIES_FILE) > 0
+    if use_cookies:
+        opts["cookiefile"] = COOKIES_FILE
+        # Prioritize embedded/mobile clients when cookies are present to avoid "page needs to be reloaded"
+        opts["extractor_args"]["youtube"]["player_client"] = [
+            "TV_EMBED", "WEB_EMBED", "IOS", "ANDROID", "TV", "MWEB", "WEB_SAFARI", "WEB",
+        ]
+    else:
+        print("Warning: cookies.txt is missing or empty — anonymous playback")
+        opts["extractor_args"]["youtube"]["player_client"] = [
+            "TV_EMBED", "WEB_EMBED", "ANDROID", "IOS", "TV", "MWEB", "WEB_SAFARI",
+        ]
+    # Optional remote PO-token (bgutil) support for hosts whose IP is flagged.
+    # Either an HTTP server (POT_SERVER_URL) or a local node/deno script
+    # (POT_SCRIPT_PATH) may be provided; yt-dlp auto-uses it when present.
+    if pot_url := os.getenv("POT_SERVER_URL"):
+        opts["extractor_args"]["youtubepot-bgutilhttp"] = {"base_url": pot_url}
+    if pot_script := os.getenv("POT_SCRIPT_PATH"):
+        opts["extractor_args"]["youtubepot-bgutilscript"] = {"script_path": pot_script}
     return opts
 
 

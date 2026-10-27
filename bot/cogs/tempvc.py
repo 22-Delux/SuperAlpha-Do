@@ -123,8 +123,8 @@ class TempVCManager(commands.Cog, name="tempvc"):
             embed.set_author(name=f"🔊 {channel.name}")
             embed.add_field(name="Owner", value=f"<@{vc.owner_id}>" if vc else "Unknown", inline=True)
             embed.add_field(name="Members", value=f"{len(channel.members)}", inline=True)
-            embed.add_field(name="Limit", value=f"{vc.user_limit or 'None'}", inline=True)
-            embed.add_field(name="Status", value="🔒 Locked" if (vc and vc.locked) else "🔓 Open", inline=True)
+            embed.add_field(name="Limit", value=f"{getattr(vc, 'user_limit', None) or 'None'}", inline=True)
+            embed.add_field(name="Status", value="🔒 Locked" if (vc and getattr(vc, 'locked', False)) else "🔓 Open", inline=True)
             if vc and self._is_owner(vc, ctx.author.id):
                 embed.add_field(name="Commands", value="`alpha vc name <name>`\n`alpha vc limit <0-99>`\n`alpha vc lock/unlock`\n`alpha vc kick @user`\n`alpha vc delete`", inline=False)
             await ctx.send(embed=embed)
@@ -143,6 +143,14 @@ class TempVCManager(commands.Cog, name="tempvc"):
                 "This isn't a temporary voice channel owned by you. "
                 "Use `alpha vc claim` to take ownership of an empty channel.",
             )
+            await ctx.send(embed=embed)
+            return
+
+        if not vc and action == "claim":
+            # allow claim below
+            pass
+        elif not vc:
+            embed = self._make_embed("❌ No VC", 0xE74C3C, "No temp VC found.")
             await ctx.send(embed=embed)
             return
 

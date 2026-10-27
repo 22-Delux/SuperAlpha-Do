@@ -12,6 +12,7 @@ from discord.ext import commands
 
 from bot.cogs.system import INVITE_URL, SUPPORT_SERVER
 from bot.services.users import GlobalUser, GuildMember
+from bot.services.embeds import stats_embed, info_embed, brand_embed, COLOR_INFO, COLOR_SUCCESS, COLOR_WARNING, COLOR_DANGER, add_author_brand
 
 
 def _fmt_dt(dt: datetime.datetime | None) -> str:
@@ -28,14 +29,15 @@ class Info(commands.Cog, name="info"):
         self.start_time = datetime.datetime.now(datetime.timezone.utc)
 
     def _make_embed(self, title: str, color: int) -> discord.Embed:
-        embed = discord.Embed(color=color)
-        embed.set_author(name=title, icon_url=None)
+        embed = brand_embed(title=title, color=color)
+        if self.bot.user:
+            embed.set_author(name=self.bot.user.name, icon_url=self.bot.user.display_avatar.url)
         return embed
 
     # ── userinfo ──────────────────────────────────────────────────────────────
     @commands.command(name="userinfo", aliases=["whois", "ui", "id"])
     async def userinfo(self, ctx: commands.Context, user: GlobalUser | None = None) -> None:
-        """Get detailed info about a user. Usage: alpha userinfo [@user | ID]"""
+        """Get detailed info about a user. Usage: sudo userinfo [@user | ID]"""
         target = user or ctx.author
         member = target if isinstance(target, discord.Member) else (
             ctx.guild.get_member(target.id) if ctx.guild is not None else None
@@ -103,7 +105,7 @@ class Info(commands.Cog, name="info"):
     # ── serverinfo ────────────────────────────────────────────────────────────
     @commands.command(name="serverinfo", aliases=["guildinfo", "server", "si", "df"])
     async def serverinfo(self, ctx: commands.Context) -> None:
-        """Get information about the current server. Usage: alpha serverinfo"""
+        """Get information about the current server. Usage: sudo serverinfo"""
         g = ctx.guild
         if g is None:
             embed = self._make_embed("❌ Not in Server", 0xE74C3C, "This command only works in a server.")
@@ -137,7 +139,7 @@ class Info(commands.Cog, name="info"):
     # ── avatar ────────────────────────────────────────────────────────────────
     @commands.command(name="avatar", aliases=["pfp", "av"])
     async def avatar(self, ctx: commands.Context, user: GlobalUser | None = None) -> None:
-        """View a user's profile picture. Usage: alpha avatar [@user | ID]"""
+        """View a user's profile picture. Usage: sudo avatar [@user | ID]"""
         user = user or ctx.author
         embed = discord.Embed(color=0xE74C3C)
         embed.set_author(name=f"🖼️ {user.display_name}'s Avatar", icon_url=user.display_avatar.url)
@@ -154,7 +156,7 @@ class Info(commands.Cog, name="info"):
     # ── banner ────────────────────────────────────────────────────────────────
     @commands.command(name="banner")
     async def banner(self, ctx: commands.Context, user: GlobalUser | None = None) -> None:
-        """View a user's profile banner. Usage: alpha banner [@user | ID]"""
+        """View a user's profile banner. Usage: sudo banner [@user | ID]"""
         user = user or ctx.author
         fetched = await self.bot.fetch_user(user.id)
         if not fetched.banner:
@@ -170,7 +172,7 @@ class Info(commands.Cog, name="info"):
     # ── roleinfo ──────────────────────────────────────────────────────────────
     @commands.command(name="roleinfo", aliases=["role", "ri"])
     async def roleinfo(self, ctx: commands.Context, *, role: discord.Role) -> None:
-        """Get info about a role. Usage: alpha roleinfo <role mention>"""
+        """Get info about a role. Usage: sudo roleinfo <role mention>"""
         perms = [p.replace("_", " ").title() for p, v in role.permissions if v]
         embed = discord.Embed(color=role.color)
         embed.set_author(name=f"🔑 {role.name}", icon_url=None)
@@ -189,7 +191,7 @@ class Info(commands.Cog, name="info"):
     # ── channelinfo ───────────────────────────────────────────────────────────
     @commands.command(name="channelinfo", aliases=["chan", "ci"])
     async def channelinfo(self, ctx: commands.Context, channel: discord.TextChannel | None = None) -> None:
-        """Get info about a text channel. Usage: alpha channelinfo [#channel]"""
+        """Get info about a text channel. Usage: sudo channelinfo [#channel]"""
         channel = channel or ctx.channel
         embed = discord.Embed(color=0x9B59B6)
         embed.set_author(name=f"📁 #{channel.name}", icon_url=None)
@@ -205,7 +207,7 @@ class Info(commands.Cog, name="info"):
     # ── membercount ───────────────────────────────────────────────────────────
     @commands.command(name="membercount", aliases=["mc"])
     async def membercount(self, ctx: commands.Context) -> None:
-        """See member statistics for the server. Usage: alpha membercount"""
+        """See member statistics for the server. Usage: sudo membercount"""
         g = ctx.guild
         if g is None:
             embed = self._make_embed("❌ Not in Server", 0xE74C3C, "This command only works in a server.")
@@ -226,7 +228,7 @@ class Info(commands.Cog, name="info"):
     # ── roles ─────────────────────────────────────────────────────────────────
     @commands.command(name="roles")
     async def roles(self, ctx: commands.Context) -> None:
-        """List all roles in the server. Usage: alpha roles"""
+        """List all roles in the server. Usage: sudo roles"""
         if ctx.guild is None:
             embed = self._make_embed("❌ Not in Server", 0xE74C3C, "This command only works in a server.")
             await ctx.send(embed=embed)
@@ -244,7 +246,7 @@ class Info(commands.Cog, name="info"):
     # ── emojis ────────────────────────────────────────────────────────────────
     @commands.command(name="emojis")
     async def emojis(self, ctx: commands.Context) -> None:
-        """View all custom emojis in the server. Usage: alpha emojis"""
+        """View all custom emojis in the server. Usage: sudo emojis"""
         emojis = ctx.guild.emojis
         if not emojis:
             embed = self._make_embed("😀 No Emojis", 0x95A5A6)
@@ -263,7 +265,7 @@ class Info(commands.Cog, name="info"):
     # ── perms ─────────────────────────────────────────────────────────────────
     @commands.command(name="perms", aliases=["permissions"])
     async def perms(self, ctx: commands.Context, member: GuildMember | None = None) -> None:
-        """View a user's server permissions. Usage: alpha perms [@user | ID]"""
+        """View a user's server permissions. Usage: sudo perms [@user | ID]"""
         member = member or ctx.author
         granted = [p.replace("_", " ").title() for p, v in member.guild_permissions if v]
         denied  = [p.replace("_", " ").title() for p, v in member.guild_permissions if not v]
@@ -276,7 +278,7 @@ class Info(commands.Cog, name="info"):
     # ── botinfo ───────────────────────────────────────────────────────────────
     @commands.command(name="botinfo", aliases=["about", "info"])
     async def botinfo(self, ctx: commands.Context) -> None:
-        """Learn about the bot and its stats. Usage: alpha botinfo"""
+        """Learn about the bot and its stats. Usage: sudo botinfo"""
         import platform
         import psutil
         import os
@@ -296,11 +298,11 @@ class Info(commands.Cog, name="info"):
         cpu_percent = process.cpu_percent(interval=0.1)
 
         embed = discord.Embed(
-            title="🤖 SuperAlpha Do",
+            title="🤖 SuperUser Do",
             description="A Linux-flavored all-in-one Discord bot built with power and simplicity in mind.",
             color=0xF39C12,
         )
-        embed.set_author(name="SuperAlpha Do", icon_url=self.bot.user.display_avatar.url if self.bot.user else None)
+        embed.set_author(name="SuperUser Do", icon_url=self.bot.user.display_avatar.url if self.bot.user else None)
         embed.set_thumbnail(url=self.bot.user.display_avatar.url if self.bot.user else None)
 
         embed.add_field(name="📚 Library", value=f"discord.py {discord.__version__}", inline=True)
@@ -319,7 +321,7 @@ class Info(commands.Cog, name="info"):
         embed.add_field(name="⚙️ Modules", value=str(len(self.bot.cogs)), inline=True)
 
         embed.add_field(name="🔗 Links", value=f"[Invite Bot]({INVITE_URL}) | [Support Server]({SUPPORT_SERVER})", inline=False)
-        embed.set_footer(text="alpha man | Alpha <command> for help")
+        embed.set_footer(text="sudo man | Sudo <command> for help")
         await ctx.send(embed=embed)
 
     # ── Slash Commands ────────────────────────────────────────────────────────
@@ -427,7 +429,7 @@ class Info(commands.Cog, name="info"):
         cpu_percent = process.cpu_percent(interval=0.1)
 
         embed = discord.Embed(
-            title="🤖 SuperAlpha Do",
+            title="🤖 SuperUser Do",
             description="A Linux-flavored all-in-one Discord bot.",
             color=0xF39C12,
         )

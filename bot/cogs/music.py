@@ -25,6 +25,7 @@ from discord.abc import Messageable
 from discord.ext import commands
 
 from bot.cogs.checks import perms_or_developer
+from bot.services.embeds import music_embed, queue_embed, brand_embed, success_embed, info_embed, warning_embed, error_embed, COLOR_MUSIC
 from bot.services.music import (
     classify_ytdl_error,
     extract_info,
@@ -118,23 +119,26 @@ class Music(commands.Cog, name="music"):
         self, track: Track, player: GuildPlayer
     ) -> discord.Embed:
         """Build the now playing embed for a track."""
-        embed = discord.Embed(color=0x1DB954)
-        embed.set_author(name="Now Playing", icon_url=None)
-        embed.description = (
-            f"[{track.title}]({track.url})" if track.url else track.title
-        )
+        embed = music_embed(title="Now Playing", description=f"[{track.title}]({track.url})" if track.url else track.title)
+        try:
+            if track.url and ("youtube.com" in track.url or "youtu.be" in track.url):
+                import re as _re
+                m = _re.search(r"(?:v=|youtu\.be/)([A-Za-z0-9_-]{11})", track.url)
+                if m:
+                    embed.set_thumbnail(url=f"https://img.youtube.com/vi/{m.group(1)}/hqdefault.jpg")
+        except Exception:
+            pass
         embed.add_field(name="Duration", value=track.fmt_duration(), inline=True)
         embed.add_field(name="Requested by", value=track.requester.mention, inline=True)
-        embed.add_field(
-            name=f"{EMOJI_MUSIC_LOOP} Loop",
-            value=self._loop_state(player),
-            inline=True,
-        )
-        embed.add_field(
-            name=f"{EMOJI_MUSIC_VOL} Volume",
-            value=f"{int(player.volume * 100)}%",
-            inline=True,
-        )
+        embed.add_field(name="Loop / Repeat", value=self._loop_state(player), inline=True)
+        embed.add_field(name="Volume", value=f"{int(player.volume * 100)}%", inline=True)
+        if getattr(player, "dj_mode", False):
+            embed.add_field(name="DJ Mode", value="✅ Enabled", inline=True)
+        if getattr(player, "party_mode", False):
+            embed.add_field(name="Party Mode", value="🎉 Active", inline=True)
+        if getattr(player, "queue_history", None) and player.queue_history:
+            embed.add_field(name="History", value=f"{len(player.queue_history)} tracks", inline=True)
+        embed.set_footer(text="Use alpha queue • alpha similar • alpha history • alpha favorites")
         return embed
 
     def _make_embed(
@@ -481,6 +485,11 @@ class Music(commands.Cog, name="music"):
             return
         player = self._get_player(ctx.guild.id)
         player.last_track = player.current
+        try:
+            if player.current:
+                player.queue_history.appendleft(player.current)
+        except Exception:
+            pass
         player.queue.clear()
         player.current = None
         self._reset_player_settings(player)
@@ -496,6 +505,12 @@ class Music(commands.Cog, name="music"):
         player.loop = False
         player.queue_loop = False
         player.autoplay = False
+        try:
+            player.party_mode = False
+            player.dj_mode = False
+            player.dj_role_id = None
+        except Exception:
+            pass
         player.bassboost = False
         player.nightcore = False
         player.eight_d = False
@@ -800,42 +815,29 @@ class Music(commands.Cog, name="music"):
     async def queue(self, ctx: commands.Context) -> None:
         """View the current music queue. Usage: alpha queue"""
         player = self._get_player(ctx.guild.id)
-        embed = discord.Embed(color=0x1DB954)
-        embed.set_author(
-            name=f"{EMOJI_MUSIC_QUEUE} Music Queue",
-            icon_url=None,
-        )
-
+        embed = queue_embed(title="Music Queue")
         if player.current:
             embed.add_field(
-                name="Now Playing",
-                value=f"`{player.current.title}` [{player.current.fmt_duration()}] — {player.current.requester.mention}",
+                name="🎵 Now Playing",
+                value=f"[{player.current.title}]({player.current.url}) — [{player.current.fmt_duration()}] • {player.current.requester.mention}",
                 inline=False,
             )
         if player.queue:
-            lines = "\n".join(
-                f"`{i + 1}.` {t.title} [{t.fmt_duration()}]"
-                for i, t in enumerate(list(player.queue)[:15])
-            )
-            if len(player.queue) > 15:
-                lines += f"\n… and {len(player.queue) - 15} more"
-            embed.add_field(
-                name=f"Queue ({len(player.queue)} tracks)",
-                value=lines,
-                inline=False,
-            )
+            lines = []
+            for i, t in enumerate(list(player.queue)[:20]):
+                lines.append(f"`{i + 1}.` [{t.title}]({t.url}) [{t.fmt_duration()}] • {t.requester.mention}")
+            if len(player.queue) > 20:
+                lines.append(f"… and **{len(player.queue) - 20}** more tracks")
+            embed.add_field(name=f"Up Next ({len(player.queue)} tracks)", value="\n".join(lines), inline=False)
         else:
-            embed.add_field(name="Queue", value="Empty", inline=False)
-        embed.add_field(
-            name=f"{EMOJI_MUSIC_LOOP} Loop",
-            value=self._loop_state(player),
-            inline=True,
-        )
-        embed.add_field(
-            name=f"{EMOJI_MUSIC_VOL} Volume",
-            value=f"{int(player.volume * 100)}%",
-            inline=True,
-        )
+            embed.add_field(name="Up Next", value="Empty", inline=False)
+        embed.add_field(name="Loop / Repeat", value=self._loop_state(player), inline=True)
+        embed.add_field(name="Volume", value=f"{int(player.volume * 100)}%", inline=True)
+        if getattr(player, "party_mode", False):
+            embed.add_field(name="Party Mode", value="🎉 Active", inline=True)
+        if getattr(player, "dj_mode", False):
+            embed.add_field(name="DJ Mode", value="✅ Enabled", inline=True)
+        embed.set_footer(text=f"Total in queue: {len(player.queue)} • Use alpha similar for suggestions")
         await ctx.send(embed=embed)
 
     # ── nowplaying ────────────────────────────────────────────────────────────
@@ -921,10 +923,10 @@ class Music(commands.Cog, name="music"):
     @staticmethod
     def _loop_state(player: GuildPlayer) -> str:
         if player.queue_loop:
-            return "ON — queue"
+            return "🔁 ON — Queue (repeat all)"
         if player.loop:
-            return "ON — single"
-        return "OFF"
+            return "🔂 ON — Single (repeat track)"
+        return "➡️ OFF"
 
     @commands.command(name="loop", aliases=["repeat"])
     async def loop(self, ctx: commands.Context, mode: str = None) -> None:
@@ -1644,3 +1646,97 @@ async def setup(bot: commands.Bot) -> None:
 
 async def teardown(bot: commands.Bot) -> None:
     shutdown_ytdl_pool()
+
+    # ── similar / play similar ────────────────────────────────────────────────
+    @commands.command(name="similar", aliases=["similarsong", "playsimilar", "related"])
+    async def similar(self, ctx: commands.Context) -> None:
+        if not ctx.voice_client:
+            embed = self._make_embed("❌ Not Connected", 0xE74C3C, "I'm not in a voice channel.")
+            await ctx.send(embed=embed)
+            return
+        player = self._get_player(ctx.guild.id)
+        base = player.current or player.last_track
+        if not base or not base.title:
+            embed = self._make_embed("❌ Nothing to Base On", 0xE74C3C, "Play a song first, then use alpha similar.")
+            await ctx.send(embed=embed)
+            return
+        track = await self._fetch_track(f"{base.title} similar song", ctx.author)
+        if not track:
+            embed = self._make_embed("❌ No Suggestions", 0xE74C3C, "Couldn't find a similar track right now.")
+            await ctx.send(embed=embed)
+            return
+        player.queue.append(track)
+        embed = music_embed(title="🎯 Play Similar", description=f"Added similar track to queue:\\n[{track.title}]({track.url})")
+        embed.add_field(name="Based on", value=base.title[:100], inline=False)
+        await ctx.send(embed=embed)
+
+    # ── party mode ────────────────────────────────────────────────────────────
+    @commands.command(name="partymode", aliases=["party"])
+    async def partymode(self, ctx: commands.Context) -> None:
+        if not ctx.voice_client:
+            embed = self._make_embed("❌ Not Connected", 0xE74C3C, "I'm not in a voice channel.")
+            await ctx.send(embed=embed)
+            return
+        player = self._get_player(ctx.guild.id)
+        player.party_mode = not getattr(player, 'party_mode', False)
+        if player.party_mode:
+            embed = music_embed(title="🎉 Party Mode ON", description="Party mode activated!")
+        else:
+            embed = self._make_embed("Party Mode OFF", 0x95A5A6, "Party mode disabled.")
+        await ctx.send(embed=embed)
+
+    # ── DJ mode ───────────────────────────────────────────────────────────────
+    @commands.command(name="djmode", aliases=["dj"])
+    async def djmode(self, ctx: commands.Context) -> None:
+        if not ctx.voice_client:
+            embed = self._make_embed("❌ Not Connected", 0xE74C3C, "I'm not in a voice channel.")
+            await ctx.send(embed=embed)
+            return
+        player = self._get_player(ctx.guild.id)
+        player.dj_mode = not getattr(player, 'dj_mode', False)
+        if player.dj_mode:
+            embed = music_embed(title="🎧 DJ Mode ON", description="DJ mode enabled.")
+        else:
+            embed = self._make_embed("DJ Mode OFF", 0x95A5A6, "DJ mode disabled.")
+        await ctx.send(embed=embed)
+
+    # ── history ───────────────────────────────────────────────────────────────
+    @commands.command(name="history")
+    async def history(self, ctx: commands.Context) -> None:
+        player = self._get_player(ctx.guild.id)
+        hist = list(getattr(player, "queue_history", []))
+        if not hist:
+            embed = self._make_embed("📜 Queue History", 0x95A5A6, "No track history yet.")
+            await ctx.send(embed=embed)
+            return
+        embed = queue_embed(title="Queue History")
+        lines = [f"`{i + 1}.` {t.title} [{t.fmt_duration()}]" for i, t in enumerate(hist[:15])]
+        embed.description = "\\n".join(lines)
+        await ctx.send(embed=embed)
+
+    # ── myfavorites ───────────────────────────────────────────────────────────
+    @commands.command(name="myfavorites", aliases=["saved"])
+    async def myfavorites(self, ctx: commands.Context) -> None:
+        user_id = ctx.author.id
+        favorites_file = f"data/favorites_{user_id}.txt"
+        if not os.path.exists(favorites_file):
+            embed = music_embed(title="⭐ Your Favorites", description="No favorites yet.\\nUse alpha favorite while a song plays.")
+            await ctx.send(embed=embed)
+            return
+        try:
+            with open(favorites_file, "r", encoding="utf-8", errors="ignore") as f:
+                favs = [line.strip() for line in f if line.strip()]
+            if not favs:
+                embed = music_embed(title="⭐ Your Favorites", description="No favorites yet.")
+                await ctx.send(embed=embed)
+                return
+            embed = music_embed(title="⭐ Your Favorites", description=f"You have **{len(favs)}** favorite track(s)")
+            lines = [f"`{i + 1}.` {fav}" for i, fav in enumerate(favs[:15])]
+            if len(favs) > 15:
+                lines.append(f"… and {len(favs) - 15} more")
+            embed.add_field(name="Saved Tracks", value="\\n".join(lines), inline=False)
+            await ctx.send(embed=embed)
+        except Exception as e:
+            embed = self._make_embed("❌ Error", 0xE74C3C, str(e))
+            await ctx.send(embed=embed)
+

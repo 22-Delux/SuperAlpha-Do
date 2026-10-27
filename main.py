@@ -64,6 +64,8 @@ COGS = [
     "bot.cogs.distro",
     "bot.cogs.steal",
     "bot.cogs.suggestions",
+    "bot.cogs.onboarding",
+    "bot.cogs.admin",
 ]
 
 

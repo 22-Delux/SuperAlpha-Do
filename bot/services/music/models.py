@@ -47,3 +47,9 @@ class GuildPlayer:
         self._start_time: float = 0
         self._paused_time: float = 0
         self.game_active: bool = False
+        # Premium features
+        self.party_mode: bool = False
+        self.dj_mode: bool = False
+        self.dj_role_id: int | None = None
+        self.queue_history: deque[Track] = deque(maxlen=50)
+        self.favorites: list[str] = []
