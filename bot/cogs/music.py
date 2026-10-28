@@ -27,14 +27,18 @@ from discord.ext import commands
 from bot.cogs.checks import perms_or_developer
 from bot.services.embeds import music_embed, queue_embed, brand_embed, success_embed, info_embed, warning_embed, error_embed, COLOR_MUSIC
 from bot.services.music import (
+    COOKIES_FILE,
     classify_ytdl_error,
     extract_info,
     get_ffmpeg_opts,
     get_ytdl_opts,
     is_apple_url,
     is_spotify_url,
+    is_youtube_search_failure,
     parse_spotify_url,
     parse_apple_url,
+    resolve_youtube_search_results,
+    resolve_youtube_via_fallback,
     search_query_for,
     fetch_apple_metadata,
     fetch_spotify_metadata,
@@ -223,8 +227,24 @@ class Music(commands.Cog, name="music"):
             data = await extract_info(full_query)
         except Exception as e:
             print(f"yt-dlp error: {e}")
-            self._last_fetch_error = classify_ytdl_error(e)
-            return None
+            data = None
+            # Datacenter hosts (e.g. Wispbyte) often get an empty ytsearch body.
+            # Resolve via Invidious/Piped, then extract the concrete watch URL.
+            if (
+                not search_query.startswith("http")
+                and is_youtube_search_failure(e)
+            ):
+                fallback_url = await resolve_youtube_via_fallback(search_query)
+                if fallback_url:
+                    try:
+                        data = await extract_info(fallback_url)
+                    except Exception as fallback_error:
+                        print(f"YouTube fallback extract error: {fallback_error}")
+                        self._last_fetch_error = classify_ytdl_error(fallback_error)
+                        return None
+            if data is None:
+                self._last_fetch_error = classify_ytdl_error(e)
+                return None
 
         if data is None:
             return None
@@ -251,7 +271,9 @@ class Music(commands.Cog, name="music"):
     ) -> discord.FFmpegOpusAudio:
         """Build an Opus source with effects + volume baked into FFmpeg ``-af``."""
         filter_str = build_filter_string(player)
-        opts = get_ffmpeg_opts(filter_str, volume=player.volume, duration=duration)
+        opts = get_ffmpeg_opts(
+            filter_str, volume=player.volume, duration=duration, url=stream_url
+        )
         if seek is not None and seek > 0:
             opts["before_options"] = f"{opts['before_options']} -ss {seek}"
         return discord.FFmpegOpusAudio(stream_url, **opts)
@@ -1018,6 +1040,21 @@ class Music(commands.Cog, name="music"):
             except Exception:
                 continue
 
+        # Same Wispbyte ytsearch outage path as ``play``.
+        if not tracks_found:
+            for term in (f"{genre} mix", f"{genre} music compilation", genre):
+                if len(tracks_found) >= 10:
+                    break
+                for hit in await resolve_youtube_search_results(term, limit=10):
+                    tracks_found.append(
+                        {
+                            "title": hit["title"],
+                            "url": hit["url"],
+                            "webpage_url": hit["url"],
+                            "id": hit["id"],
+                        }
+                    )
+
         if not tracks_found:
             await loading_msg.edit(embed=self._make_embed(
                 "❌ No Results", 0xE74C3C, f"Could not find any **{genre}** genre tracks"
@@ -1567,12 +1604,16 @@ class Music(commands.Cog, name="music"):
     @perms_or_developer(administrator=True)
     async def refresh(self, ctx: commands.Context) -> None:
         """Refresh yt-dlp cookies. Usage: alpha refresh"""
-        cookies_file = "cookies.txt"
-        
+        cookies_file = COOKIES_FILE
+
         if not os.path.exists(cookies_file):
             embed = discord.Embed(color=0xE74C3C)
             embed.set_author(name="❌ No Cookies File")
-            embed.description = "No `cookies.txt` file found in bot directory.\nCreate one with YouTube cookies for age-restricted content."
+            embed.description = (
+                f"No `cookies.txt` found at `{cookies_file}`.\n"
+                "Create one with YouTube cookies for age-restricted content, "
+                "or set `YTDL_COOKIES` to its path."
+            )
             await ctx.send(embed=embed)
             return
 

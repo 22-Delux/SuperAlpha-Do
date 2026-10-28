@@ -12,12 +12,25 @@ import re
 import time
 from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
-from urllib.parse import parse_qs, urlsplit
+from urllib.parse import parse_qs, quote_plus, urlsplit
 import aiohttp
 import yt_dlp
 
 # Resolve cookies.txt against the repo root so it works regardless of cwd.
-COOKIES_FILE = str(Path(__file__).resolve().parents[3] / "cookies.txt")
+# Override with YTDL_COOKIES=/path/to/cookies.txt when the host mounts it elsewhere.
+_DEFAULT_COOKIES = Path(__file__).resolve().parents[3] / "cookies.txt"
+COOKIES_FILE = os.environ.get("YTDL_COOKIES") or str(_DEFAULT_COOKIES)
+
+# Public Piped/Invidious mirrors used only when yt-dlp's ytsearch API returns
+# an empty body (common on datacenter IPs such as Wispbyte). Tried in order;
+# first mirror that returns video ids wins.
+_SEARCH_FALLBACK_ENDPOINTS = (
+    "https://api.piped.private.coffee/search?q={q}&filter=videos",
+    "https://pipedapi.darkness.services/search?q={q}&filter=videos",
+    "https://piped-api.privacyredirect.com/search?q={q}&filter=videos",
+    "https://invidious.projectsegfau.lt/api/v1/search?q={q}&type=video",
+    "https://inv.nadeko.net/api/v1/search?q={q}&type=video",
+)
 
 BASE_YTDL_OPTS = {
     "format": "bestaudio/best",
@@ -27,13 +40,11 @@ BASE_YTDL_OPTS = {
     "noplaylist": True,
     "extract_flat": False,
     "socket_timeout": 30,
-    "retries": 3,
-    "fragment_retries": 3,
     # Rotate through multiple YouTube players so a bot-checked web client
-    # doesn't block playback (mobile/embedded clients are usually allowed).
+    # doesn't block playback (embedded/TV clients are usually allowed).
     "extractor_args": {
         "youtube": {
-            "player_client": ["ANDROID", "IOS", "MWEB", "WEB", "TV_EMBED"],
+            "player_client": ["TV_EMBED", "WEB_EMBED", "TV", "MWEB", "IOS", "ANDROID"],
         },
     },
     "http_headers": {
@@ -91,14 +102,14 @@ def get_ytdl_opts() -> dict:
     use_cookies = os.path.exists(COOKIES_FILE) and os.path.getsize(COOKIES_FILE) > 0
     if use_cookies:
         opts["cookiefile"] = COOKIES_FILE
-        # Prioritize embedded/mobile clients when cookies are present to avoid "page needs to be reloaded"
+        # Prioritize embedded/TV clients when cookies are present to avoid "page needs to be reloaded"
         opts["extractor_args"]["youtube"]["player_client"] = [
-            "ANDROID", "IOS", "MWEB", "WEB", "TV_EMBED", "WEB_EMBED",
+            "TV_EMBED", "WEB_EMBED", "IOS", "ANDROID", "TV", "MWEB", "WEB_SAFARI", "WEB",
         ]
     else:
-        print("Warning: cookies.txt is missing or empty — anonymous playback")
+        print(f"Warning: cookies.txt is missing or empty — anonymous playback ({COOKIES_FILE})")
         opts["extractor_args"]["youtube"]["player_client"] = [
-            "ANDROID", "IOS", "MWEB", "WEB", "TV_EMBED", "WEB_EMBED",
+            "TV_EMBED", "WEB_EMBED", "ANDROID", "IOS", "TV", "MWEB", "WEB_SAFARI",
         ]
     # Optional remote PO-token (bgutil) support for hosts whose IP is flagged.
     # Either an HTTP server (POT_SERVER_URL) or a local node/deno script
@@ -107,6 +118,17 @@ def get_ytdl_opts() -> dict:
         opts["extractor_args"]["youtubepot-bgutilhttp"] = {"base_url": pot_url}
     if pot_script := os.getenv("POT_SCRIPT_PATH"):
         opts["extractor_args"]["youtubepot-bgutilscript"] = {"script_path": pot_script}
+    # Optional HTTP(S) proxy — needed on hosts whose egress IP is blocked by YouTube.
+    # Prefer YTDL_PROXY; fall back to the standard HTTPS_PROXY / HTTP_PROXY envs.
+    proxy = (
+        os.getenv("YTDL_PROXY")
+        or os.getenv("HTTPS_PROXY")
+        or os.getenv("HTTP_PROXY")
+        or os.getenv("https_proxy")
+        or os.getenv("http_proxy")
+    )
+    if proxy:
+        opts["proxy"] = proxy
     return opts
 
 
@@ -393,10 +415,118 @@ def youtube_search_query(query: str) -> str:
     return f"ytsearch1:{query}"
 
 
+def is_youtube_search_failure(error: Exception | str) -> bool:
+    """True when YouTube's search API returned an empty/blocked response."""
+    low = str(error).lower()
+    return any(
+        marker in low
+        for marker in (
+            "failed to parse json",
+            "jsondecodeerror",
+            "sign in to confirm",
+            "confirm you're not a bot",
+            "bot check",
+            "page needs to be reloaded",
+        )
+    )
+
+
+def _video_id_from_search_item(item: dict) -> str | None:
+    """Pull an 11-char YouTube id out of a Piped or Invidious search hit."""
+    if not isinstance(item, dict):
+        return None
+    for key in ("videoId", "id", "url", "webpageUrl", "webpage_url"):
+        value = item.get(key)
+        if not value:
+            continue
+        text = str(value)
+        if re.fullmatch(r"[A-Za-z0-9_-]{11}", text):
+            return text
+        match = re.search(r"(?:v=|/watch/|/v/|youtu\.be/)([A-Za-z0-9_-]{11})", text)
+        if match:
+            return match.group(1)
+    return None
+
+
+async def resolve_youtube_search_results(
+    query: str, *, limit: int = 1
+) -> list[dict[str, str]]:
+    """Resolve a search term to YouTube hits via Piped/Invidious.
+
+    Each hit is ``{"title", "url", "id"}``. Used when ``ytsearch`` fails because
+    the host IP gets an empty YouTube search API response. Returns ``[]`` when
+    every mirror fails.
+    """
+    encoded = quote_plus(query.strip())
+    if not encoded or limit < 1:
+        return []
+    timeout = aiohttp.ClientTimeout(total=10)
+    headers = {
+        "User-Agent": "Mozilla/5.0 (compatible; SuperAlphaDo/1.0; +https://github.com/)",
+        "Accept": "application/json",
+    }
+    async with aiohttp.ClientSession(timeout=timeout, headers=headers) as session:
+        for template in _SEARCH_FALLBACK_ENDPOINTS:
+            url = template.format(q=encoded)
+            try:
+                async with session.get(url) as response:
+                    if response.status != 200:
+                        continue
+                    raw = (await response.text()).lstrip()
+                    if not raw or raw[0] not in "{[":
+                        continue
+                    payload = json.loads(raw)
+            except Exception as exc:
+                print(f"YouTube search fallback missed {url}: {exc}")
+                continue
+
+            items = payload if isinstance(payload, list) else (payload.get("items") or [])
+            if not isinstance(items, list):
+                continue
+
+            results: list[dict[str, str]] = []
+            seen: set[str] = set()
+            for item in items:
+                if not isinstance(item, dict):
+                    continue
+                # Piped marks streams as type "stream"; Invidious uses "video".
+                kind = (item.get("type") or item.get("typeOf") or "video").lower()
+                if kind not in {"video", "stream", ""}:
+                    continue
+                video_id = _video_id_from_search_item(item)
+                if not video_id or video_id in seen:
+                    continue
+                seen.add(video_id)
+                title = (item.get("title") or query).strip() or query
+                watch_url = f"https://www.youtube.com/watch?v={video_id}"
+                results.append({"title": title, "url": watch_url, "id": video_id})
+                if len(results) >= limit:
+                    break
+            if results:
+                print(
+                    f"YouTube search fallback resolved '{query}' -> "
+                    f"{len(results)} result(s) via {urlsplit(url).hostname}"
+                )
+                return results
+    return []
+
+
+async def resolve_youtube_via_fallback(query: str) -> str | None:
+    """Resolve a search term to a single YouTube watch URL via Piped/Invidious."""
+    results = await resolve_youtube_search_results(query, limit=1)
+    return results[0]["url"] if results else None
+
+
 def classify_ytdl_error(error: Exception) -> str:
     """Turn a yt-dlp exception into a human-friendly message."""
     msg = str(error)
     low = msg.lower()
+    if "failed to parse json" in low or "jsondecodeerror" in low:
+        return (
+            "**YouTube returned an empty or invalid search response.** "
+            "This usually means the host IP is blocked. Add a valid "
+            "`cookies.txt`, set `YTDL_PROXY`, or paste a direct YouTube link."
+        )
     if any(k in low for k in (
         "cookies", "cookie not found", "sign in to confirm", "logged out",
         "logged_out", "must provide login", "use cookies",
@@ -435,18 +565,15 @@ async def extract_info(
     is needed.
     """
     loop = asyncio.get_running_loop()
+    opts = get_ytdl_opts()
     if skip_download:
-        opts = {
-            "quiet": True,
-            "skip_download": True,
-            "extract_flat": "in_playlist" if flat else False,
-            "noplaylist": not flat,
-        }
-    else:
-        opts = get_ytdl_opts()
-        if flat:
-            opts["extract_flat"] = "in_playlist"
-            opts["noplaylist"] = False
+        opts["skip_download"] = True
+    if flat:
+        opts["extract_flat"] = "in_playlist"
+        opts["noplaylist"] = False
+    elif skip_download:
+        opts["extract_flat"] = False
+        opts["noplaylist"] = True
     return await loop.run_in_executor(
         _get_ytdl_pool(),
         _ytdl_extract,

@@ -404,6 +404,76 @@ def test_search_query_prefers_artist_title():
     assert search_query_for(" Hello ", " Adele ") == "Adele - Hello"
 
 
+def test_youtube_empty_search_response_has_actionable_error():
+    error = RuntimeError(
+        'query "timeless inferno remix" page 1: Failed to parse JSON '
+        '(caused by JSONDecodeError("Expecting value in \'\': line 1 column 1 (char 0)"))'
+    )
+
+    assert music_sources.is_youtube_search_failure(error)
+    message = music_sources.classify_ytdl_error(error)
+    assert "empty or invalid search response" in message
+    assert "YTDL_PROXY" in message or "cookies.txt" in message
+
+
+def test_video_id_from_search_item_shapes():
+    assert music_sources._video_id_from_search_item(
+        {"videoId": "dQw4w9WgXcQ", "type": "video"}
+    ) == "dQw4w9WgXcQ"
+    assert music_sources._video_id_from_search_item(
+        {"url": "/watch?v=dQw4w9WgXcQ", "type": "stream"}
+    ) == "dQw4w9WgXcQ"
+    assert music_sources._video_id_from_search_item({"title": "no id"}) is None
+
+
+def test_ffmpeg_opts_add_youtube_headers():
+    from bot.services.music.filters import get_ffmpeg_opts
+
+    plain = get_ffmpeg_opts(url="https://example.com/a.mp3")
+    assert "user_agent" not in plain["before_options"]
+
+    yt = get_ffmpeg_opts(url="https://rr1---sn-abc.googlevideo.com/videoplayback?id=1")
+    assert "user_agent" in yt["before_options"]
+    assert "Referer: https://www.youtube.com/" in yt["before_options"]
+
+
+async def test_fetch_track_uses_piped_fallback_on_json_error(bot, monkeypatch):
+    cog = Music(bot)
+    member = make_member(USER_IDS["member"])
+
+    async def boom(query, **kwargs):
+        raise RuntimeError(
+            'query "timeless inferno remix" page 1: Failed to parse JSON '
+            '(caused by JSONDecodeError("Expecting value in \'\': line 1 column 1 (char 0)"))'
+        )
+
+    calls = {"n": 0}
+
+    async def extract(query, **kwargs):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            return await boom(query)
+        assert query.startswith("https://www.youtube.com/watch?v=")
+        return {
+            "title": "The Weeknd - Timeless (Inferno Remix)",
+            "webpage_url": query,
+            "url": "https://rr.googlevideo.com/videoplayback",
+            "duration": 180,
+        }
+
+    async def fake_fallback(query):
+        assert query == "timeless inferno remix"
+        return "https://www.youtube.com/watch?v=e5uVwNSKFKs"
+
+    monkeypatch.setattr(music_cog, "extract_info", extract)
+    monkeypatch.setattr(music_cog, "resolve_youtube_via_fallback", fake_fallback)
+
+    track = await cog._fetch_track("timeless inferno remix", member)
+    assert track is not None
+    assert track.title.startswith("The Weeknd")
+    assert calls["n"] == 2
+
+
 def _voice_chat_channel():
     """A voice channel's text chat, as discord.py represents it."""
     from unittest.mock import MagicMock

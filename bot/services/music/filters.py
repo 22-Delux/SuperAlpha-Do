@@ -2,6 +2,15 @@
 
 from __future__ import annotations
 
+from urllib.parse import urlsplit
+
+# Matches a browser User-Agent so YouTube's CDN lets FFmpeg fetch the
+# signed googlevideo stream URL (plain ffmpeg requests get HTTP 403).
+_YOUTUBE_USER_AGENT = (
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+    "(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+)
+
 
 EQ_PRESETS = {
     "bass": "equalizer=f=100:width_type=o:width=2:g=15",
@@ -31,11 +40,20 @@ def build_filter_string(player) -> str:
     return ",".join(filters) if filters else ""
 
 
+def _is_youtube_stream(url: str) -> bool:
+    try:
+        host = (urlsplit(url).hostname or "").lower()
+    except ValueError:
+        return False
+    return host == "googlevideo.com" or host.endswith(".googlevideo.com")
+
+
 def get_ffmpeg_opts(
     filter_str: str = "",
     volume: float = 1.0,
     *,
     duration: float | None = None,
+    url: str = "",
 ) -> dict:
     """Build FFmpeg options for ``discord.FFmpegOpusAudio``.
 
@@ -47,6 +65,11 @@ def get_ffmpeg_opts(
         "-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5 "
         "-thread_queue_size 8192"
     )
+    if _is_youtube_stream(url):
+        before += (
+            f' -user_agent "{_YOUTUBE_USER_AGENT}"'
+            ' -headers "Referer: https://www.youtube.com/\r\n"'
+        )
     options = "-vn -bufsize 384k -maxrate 256k -threads 1"
 
     filters: list[str] = []
