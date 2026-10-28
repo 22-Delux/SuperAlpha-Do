@@ -226,8 +226,55 @@ class Music(commands.Cog, name="music"):
             data = await extract_info(full_query)
         except Exception as e:
             print(f"yt-dlp error: {e}")
-            self._last_fetch_error = classify_ytdl_error(e)
-            return None
+            error_text = str(e).lower()
+            can_search_soundcloud = (
+                not search_query.startswith("http")
+                and any(
+                    marker in error_text
+                    for marker in (
+                        "failed to parse json",
+                        "jsondecodeerror",
+                        "sign in to confirm",
+                        "confirm you're not a bot",
+                        "bot check",
+                        "page needs to be reloaded",
+                    )
+                )
+            )
+            if not can_search_soundcloud:
+                self._last_fetch_error = classify_ytdl_error(e)
+                return None
+
+            try:
+                soundcloud_results = await extract_info(
+                    f"scsearch5:{search_query}", flat=True
+                )
+            except Exception as fallback_error:
+                print(f"SoundCloud fallback error: {fallback_error}")
+                soundcloud_results = None
+
+            data = None
+            entries = soundcloud_results.get("entries", []) if soundcloud_results else []
+            for entry in entries:
+                candidate_url = entry.get("webpage_url") or entry.get("url")
+                if not candidate_url or not candidate_url.startswith("http"):
+                    continue
+                try:
+                    candidate = await extract_info(candidate_url)
+                except Exception as fallback_error:
+                    print(f"Skipping unplayable SoundCloud result: {fallback_error}")
+                    continue
+                if candidate and candidate.get("url"):
+                    data = candidate
+                    print("YouTube search failed; using SoundCloud search fallback")
+                    break
+
+            if data is None:
+                self._last_fetch_error = (
+                    "YouTube search failed, and SoundCloud results were unavailable "
+                    "or DRM-protected. Try another query or a direct track link."
+                )
+                return None
 
         if data is None:
             return None
@@ -236,6 +283,11 @@ class Music(commands.Cog, name="music"):
             if not data["entries"]:
                 return None
             data = data["entries"][0]
+
+        try:
+            data["duration"] = int(float(data.get("duration") or 0))
+        except (TypeError, ValueError, OverflowError):
+            data["duration"] = 0
 
         return Track(data, requester)
 
@@ -1739,4 +1791,3 @@ async def teardown(bot: commands.Bot) -> None:
         except Exception as e:
             embed = self._make_embed("❌ Error", 0xE74C3C, str(e))
             await ctx.send(embed=embed)
-
