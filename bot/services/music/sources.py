@@ -27,11 +27,13 @@ BASE_YTDL_OPTS = {
     "noplaylist": True,
     "extract_flat": False,
     "socket_timeout": 30,
+    "retries": 3,
+    "fragment_retries": 3,
     # Rotate through multiple YouTube players so a bot-checked web client
     # doesn't block playback (mobile/embedded clients are usually allowed).
     "extractor_args": {
         "youtube": {
-            "player_client": ["TV_EMBED", "WEB_EMBED", "TV", "MWEB", "IOS", "ANDROID"],
+            "player_client": ["ANDROID", "IOS", "MWEB", "WEB", "TV_EMBED"],
         },
     },
     "http_headers": {
@@ -91,12 +93,12 @@ def get_ytdl_opts() -> dict:
         opts["cookiefile"] = COOKIES_FILE
         # Prioritize embedded/mobile clients when cookies are present to avoid "page needs to be reloaded"
         opts["extractor_args"]["youtube"]["player_client"] = [
-            "TV_EMBED", "WEB_EMBED", "IOS", "ANDROID", "TV", "MWEB", "WEB_SAFARI", "WEB",
+            "ANDROID", "IOS", "MWEB", "WEB", "TV_EMBED", "WEB_EMBED",
         ]
     else:
         print("Warning: cookies.txt is missing or empty — anonymous playback")
         opts["extractor_args"]["youtube"]["player_client"] = [
-            "TV_EMBED", "WEB_EMBED", "ANDROID", "IOS", "TV", "MWEB", "WEB_SAFARI",
+            "ANDROID", "IOS", "MWEB", "WEB", "TV_EMBED", "WEB_EMBED",
         ]
     # Optional remote PO-token (bgutil) support for hosts whose IP is flagged.
     # Either an HTTP server (POT_SERVER_URL) or a local node/deno script
@@ -128,10 +130,6 @@ def _host_part(url: str) -> str:
 
 def is_spotify_url(url: str) -> bool:
     return _is_domain(_host_part(url), "spotify.com")
-
-
-def is_soundcloud_url(url: str) -> bool:
-    return _is_domain(_hostname(url), "soundcloud.com")
 
 
 SPOTIFY_API = "https://api.spotify.com/v1"
@@ -387,7 +385,7 @@ async def fetch_apple_metadata(song_id: str) -> dict | None:
 
 
 def is_playable_url(url: str) -> bool:
-    supported = ("youtube.com", "youtu.be", "soundcloud.com", "spotify.com", "apple.com", "bandcamp.com", "twitch.tv")
+    supported = ("youtube.com", "youtu.be", "spotify.com", "apple.com", "bandcamp.com", "twitch.tv")
     return any(_is_domain(_hostname(url), d) for d in supported)
 
 
@@ -418,7 +416,7 @@ def classify_ytdl_error(error: Exception) -> str:
     if "not a valid url" in low or "unsupported url" in low:
         return (
             "That doesn't look like a link I can play. Try a YouTube, "
-            "SoundCloud, Bandcamp, Spotify, or Apple Music link, or a search term."
+            "Bandcamp, Spotify, or Apple Music link, or a search term."
         )
     return f"Could not fetch that track: `{msg[:200]}`"
 
