@@ -32,7 +32,6 @@ from bot.services.music import (
     get_ffmpeg_opts,
     get_ytdl_opts,
     is_apple_url,
-    is_soundcloud_url,
     is_spotify_url,
     parse_spotify_url,
     parse_apple_url,
@@ -214,8 +213,6 @@ class Music(commands.Cog, name="music"):
                     "share link, or just a search term."
                 )
                 return None
-            if is_soundcloud_url(query):
-                print(f"SoundCloud URL detected: {query}")
 
         try:
             full_query = (
@@ -226,55 +223,8 @@ class Music(commands.Cog, name="music"):
             data = await extract_info(full_query)
         except Exception as e:
             print(f"yt-dlp error: {e}")
-            error_text = str(e).lower()
-            can_search_soundcloud = (
-                not search_query.startswith("http")
-                and any(
-                    marker in error_text
-                    for marker in (
-                        "failed to parse json",
-                        "jsondecodeerror",
-                        "sign in to confirm",
-                        "confirm you're not a bot",
-                        "bot check",
-                        "page needs to be reloaded",
-                    )
-                )
-            )
-            if not can_search_soundcloud:
-                self._last_fetch_error = classify_ytdl_error(e)
-                return None
-
-            try:
-                soundcloud_results = await extract_info(
-                    f"scsearch5:{search_query}", flat=True
-                )
-            except Exception as fallback_error:
-                print(f"SoundCloud fallback error: {fallback_error}")
-                soundcloud_results = None
-
-            data = None
-            entries = soundcloud_results.get("entries", []) if soundcloud_results else []
-            for entry in entries:
-                candidate_url = entry.get("webpage_url") or entry.get("url")
-                if not candidate_url or not candidate_url.startswith("http"):
-                    continue
-                try:
-                    candidate = await extract_info(candidate_url)
-                except Exception as fallback_error:
-                    print(f"Skipping unplayable SoundCloud result: {fallback_error}")
-                    continue
-                if candidate and candidate.get("url"):
-                    data = candidate
-                    print("YouTube search failed; using SoundCloud search fallback")
-                    break
-
-            if data is None:
-                self._last_fetch_error = (
-                    "YouTube search failed, and SoundCloud results were unavailable "
-                    "or DRM-protected. Try another query or a direct track link."
-                )
-                return None
+            self._last_fetch_error = classify_ytdl_error(e)
+            return None
 
         if data is None:
             return None
@@ -345,7 +295,6 @@ class Music(commands.Cog, name="music"):
             for marker in (
                 "youtube.com/watch",
                 "youtu.be/",
-                "soundcloud.com/",
                 "ytsearch",
             )
         ):
@@ -661,8 +610,6 @@ class Music(commands.Cog, name="music"):
                 msg = await ctx.send(embed=self._make_embed("🔍 Spotify Detected", 0x1DB954, "Finding on YouTube..."))
             elif is_apple_url(query):
                 msg = await ctx.send(embed=self._make_embed("🔍 Apple Music Detected", 0xFC3C44, "Finding on YouTube..."))
-            elif is_soundcloud_url(query):
-                msg = await ctx.send(embed=self._make_embed("🔍 SoundCloud Detected", 0xFF5500, "Loading..."))
             else:
                 msg = await ctx.send(embed=self._make_embed("🔍 Searching...", 0x1DB954, query))
         else:
