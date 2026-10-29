@@ -8,6 +8,7 @@ A feature-rich, polished Discord bot with moderation, music, XP, games, and prem
 - **🎵 Premium Music** - High-quality playback with queue management, now-playing embeds with thumbnails, loop/repeat, party mode, DJ mode, similar song suggestions, queue history, favorites
 - **⭐ XP & Levels** - Chat/VC XP, leaderboards, level-up notifications, customizable level-up channels
 - **🎉 Giveaways** - Easy giveaway creation with automatic endings and rerolls
+- **🎨 Emoji & Sticker Stealing** - Copy emojis, steal cross-server stickers, and turn images into stickers
 - **🎮 Games & Fun** - Minigames, 8ball, trivia, and more
 - **🤖 AI Integration** - AI-powered features
 - **⚡ Onboarding** - Guided setup wizard for new servers with auto-configuration

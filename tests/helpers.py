@@ -145,6 +145,7 @@ def make_real_message(
     message_id: int = 1,
     attachments=None,
     embeds=None,
+    stickers=None,
 ) -> discord.Message:
     """A *real* discord.Message (passes isinstance) with mocked io methods."""
     state = MagicMock()
@@ -174,6 +175,8 @@ def make_real_message(
         msg.attachments = list(attachments)
     if embeds is not None:
         msg.embeds = list(embeds)
+    if stickers is not None:
+        msg.stickers = list(stickers)
     return msg
 
 

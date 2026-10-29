@@ -8,3 +8,4 @@ psutil
 openai
 davey
 asyncpg
+Pillow

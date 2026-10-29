@@ -85,6 +85,14 @@ The bot supports both prefix commands (`alpha <command>`) and slash commands (`/
 | `alpha botinfo` | Prefix | - | Bot information |
 | `alpha status` | Prefix | - | System status dashboard |
 
+## Emojis & Stickers
+
+| Command | Type | Permission | Description |
+|---------|------|------------|-------------|
+| `alpha steal <name>` | Prefix | Manage Expressions | Copy an emoji or image from a replied message |
+| `alpha stealsticker <name>` | Prefix | Manage Expressions | Copy a sticker (including cross-server), or turn an image into a sticker |
+| `alpha addsticker <name>` | Prefix | Manage Expressions | Alias for `stealsticker` |
+
 ## Fun & Games
 
 | Command | Type | Permission | Description |
