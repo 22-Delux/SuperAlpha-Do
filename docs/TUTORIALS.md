@@ -1,6 +1,6 @@
 # Tutorials - Setup and Features
 
-Step-by-step guides to help you master sudo-bot's features.
+Step-by-step guides to help you master SuperAlpha Do's features.
 
 ## Tutorial 1: Complete Server Setup
 
@@ -46,35 +46,35 @@ Configure comprehensive moderation tools.
 
 1. **Set up logging**
    ```
-   sudo logsetup #mod-logs
+   alpha logsetup #mod-logs
    ```
 
 2. **Configure auto-moderation**
    ```
-   sudo automod enable
-   sudo automod word add scam
-   sudo automod word add phishing
-   sudo automod mentions 6
-   sudo automod action warn
-   sudo automod alert #mod-logs
+   alpha automod enable
+   alpha automod word add scam
+   alpha automod word add phishing
+   alpha automod mentions 6
+   alpha automod action warn
+   alpha automod alert #mod-logs
    ```
 
 3. **Whitelist safe links**
    ```
-   sudo automod allow add discord.com
-   sudo automod allow add youtube.com
-   sudo automod allow add github.com
+   alpha automod allow add discord.com
+   alpha automod allow add youtube.com
+   alpha automod allow add github.com
    ```
 
 4. **Test it** - Try the mod commands
    ```
-   sudo mute @user 10m
-   sudo purge 10
+   alpha mute @user 10m
+   alpha purge 10
    ```
 
 ### Tips
 - Use `/modsettings` for easy toggles
-- Check automod status with `sudo automod status`
+- Check automod status with `alpha automod status`
 
 ---
 
@@ -89,32 +89,32 @@ Learn to use all the premium music features.
 
 1. **Join a voice channel** and play music
    ```
-   sudo play never gonna give you up
+   alpha play never gonna give you up
    ```
 
 2. **Explore queue features**
    ```
-   sudo queue        # View premium queue UI
-   sudo nowplaying   # See now playing with thumbnail
-   sudo loop queue   # Loop the whole queue
-   sudo shuffle      # Shuffle queue
+   alpha queue        # View premium queue UI
+   alpha nowplaying   # See now playing with thumbnail
+   alpha loop queue   # Loop the whole queue
+   alpha shuffle      # Shuffle queue
    ```
 
 3. **Try premium features**
    ```
-   sudo partymode    # Enable party mode
-   sudo similar      # Get song suggestions
-   sudo history      # View recently played
-   sudo favorite     # Save current track
-   sudo myfavorites  # View your favorites
+   alpha partymode    # Enable party mode
+   alpha similar      # Get song suggestions
+   alpha history      # View recently played
+   alpha favorite     # Save current track
+   alpha myfavorites  # View your favorites
    ```
 
 4. **Control playback**
    ```
-   sudo volume 80
-   sudo skip
-   sudo pause/resume
-   sudo stop
+   alpha volume 80
+   alpha skip
+   alpha pause/resume
+   alpha stop
    ```
 
 ### Tips
@@ -135,17 +135,17 @@ Configure and use the XP system.
 
 1. **Check your rank**
    ```
-   sudo rank
+   alpha rank
    ```
 
 2. **View leaderboard**
    ```
-   sudo leaderboard
+   alpha leaderboard
    ```
 
 3. **Set up level-up notifications**
    ```
-   sudo levelchannel set #level-ups
+   alpha levelchannel set #level-ups
    ```
    Or let them appear in chat (default)
 
@@ -170,16 +170,16 @@ Create and manage giveaways.
 
 1. **Create a giveaway**
    ```
-   sudo giveaway create 1h 1w Nitro Classic
+   alpha giveaway create 1h 1w Nitro Classic
    ```
    Duration: 1h (1 hour), Winners: 1, Prize: Nitro Classic
 
 2. **Manage giveaways**
    ```
-   sudo giveaway list    # View active giveaways
-   sudo giveaway end <message_id>  # End early
-   sudo giveaway reroll <message_id> # Reroll winners
-   sudo giveaway cancel <message_id> # Cancel
+   alpha giveaway list    # View active giveaways
+   alpha giveaway end <message_id>  # End early
+   alpha giveaway reroll <message_id> # Reroll winners
+   alpha giveaway cancel <message_id> # Cancel
    ```
 
 ### Duration formats
@@ -237,7 +237,7 @@ Master the centralized admin interface.
 ## Pro Tips
 
 - **Keyboard shortcuts**: Use slash commands for better UX with autocomplete
-- **Help system**: `sudo man` is powerful - search by function or keywords
+- **Help system**: `alpha man` is powerful - search by function or keywords
 - **Branding**: The bot has a consistent, polished look throughout
 - **Premium feel**: Features like party mode, DJ mode, and polished embeds enhance the experience
 - **Stay organized**: Use the dashboard for all admin tasks
@@ -247,4 +247,4 @@ Master the centralized admin interface.
 - [Command Reference](COMMAND_REFERENCE.md) - All commands
 - [FAQ](FAQ.md) - Common issues
 - [Quick Start for Admins](QUICK_START_ADMINS.md) - Admin guide
-- Use `sudo status` to check bot health
+- Use `alpha status` to check bot health

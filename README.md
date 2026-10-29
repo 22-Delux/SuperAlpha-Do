@@ -1,4 +1,4 @@
-# sudo-bot
+# SuperAlpha Do
 
 A feature-rich, polished Discord bot with moderation, music, XP, games, and premium admin tools. Built for speed, usability, and a clean user experience.
 
@@ -43,9 +43,9 @@ Optional:
 ## Getting Started
 
 1. Invite the bot to your server with appropriate permissions
-2. Run `/setup` or `sudo setup` for guided configuration
-3. Use `/config` or `sudo config` to access the admin dashboard
-4. Check out `/help` or `sudo man` for all commands
+2. Run `/setup` or `alpha setup` for guided configuration
+3. Use `/config` or `alpha config` to access the admin dashboard
+4. Check out `/help` or `alpha man` for all commands
 
 ## Support
 

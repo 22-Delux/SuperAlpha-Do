@@ -69,9 +69,9 @@ class OnboardingView(discord.ui.View):
                 p = prefix(self.bot, interaction.message)  # type: ignore
                 prefix_str = p[0] if isinstance(p, (list, tuple)) and p else "$ "
             except Exception:
-                prefix_str = "sudo "
+                prefix_str = "alpha "
         else:
-            prefix_str = prefix[0] if isinstance(prefix, (list, tuple)) and prefix else "sudo "
+            prefix_str = prefix[0] if isinstance(prefix, (list, tuple)) and prefix else "alpha "
         embed = discord.Embed(
             title="Quick Help",
             description=f"Use `{prefix_str}man` or slash commands.\n\n**Key commands:**\n• `/help` or `{prefix_str}man` - Browse all commands\n• `/setup` - Guided setup wizard\n• `/dashboard` - Server overview",
@@ -254,7 +254,7 @@ class Onboarding(commands.Cog, name="onboarding"):
                     "• **XP System** - levels, ranks, rewards\n"
                     "• **Music** - play from YouTube/SoundCloud/Spotify/Apple Music\n\n"
                     "**Quick Start:**\n"
-                    "• `/help` or `sudo man` - See all commands\n"
+                    "• `/help` or `alpha man` - See all commands\n"
                     "• `/setup` - Guided setup wizard (auto-configure channels/roles)\n"
                     "• `/dashboard` - Server overview & quick settings\n"
                 ),
@@ -288,11 +288,11 @@ class Onboarding(commands.Cog, name="onboarding"):
             try:
                 ctx = await self.bot.get_context(interaction.message)  # type: ignore
                 p = prefix(self.bot, ctx) if ctx else None
-                prefix_str = p[0] if isinstance(p, (list, tuple)) and p else "sudo "
+                prefix_str = p[0] if isinstance(p, (list, tuple)) and p else "alpha "
             except Exception:
-                prefix_str = "sudo "
+                prefix_str = "alpha "
         else:
-            prefix_str = prefix[0] if isinstance(prefix, (list, tuple)) and prefix else "sudo "
+            prefix_str = prefix[0] if isinstance(prefix, (list, tuple)) and prefix else "alpha "
         embed = discord.Embed(
             title="📖 Help - Quick Start",
             description=(

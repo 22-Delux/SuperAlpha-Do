@@ -239,7 +239,7 @@ def _build_prefix_entry(ctx: commands.Context) -> dict:
     guild = ctx.guild
     return {
         "ts": time.time(),
-        "kind": "sudo",
+        "kind": "alpha",
         "cmd": cmd.qualified_name,
         "root": cmd_name,
         "cog": (cmd.cog_name or "?").lower(),
@@ -477,7 +477,7 @@ def _render(entries: list[dict], count: int, filters: list[str]) -> str:
         guild = (e.get("guild") or "DM")[:12]
         user = (e.get("user") or "?")[:12]
         cog = (e.get("cog") or "?")[:4].upper()
-        kind = "alpha " if e.get("kind") == "sudo" else "slash"
+        kind = "alpha " if e.get("kind") == "alpha" else "slash"
         args = _format_args(e)
         # The args column is the only unbounded one, so it absorbs the cap that
         # keeps the row at 104 visible characters. Clipping after colouring

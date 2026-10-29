@@ -319,7 +319,7 @@ def test_embed_sites_fit_the_embed_limit():
     entries = [
         {
             "ts": 1756400000, "guild": "G" * 12, "user": "U" * 12, "uid": "9" * 11,
-            "kind": "sudo", "cog": "musi", "cmd": "c" * 24, "args": "a" * 80 + f" {i}",
+            "kind": "alpha", "cog": "musi", "cmd": "c" * 24, "args": "a" * 80 + f" {i}",
         }
         for i in range(MAX_SHOW)
     ]

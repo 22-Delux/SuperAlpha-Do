@@ -148,7 +148,7 @@ async def build_config_embed(bot: commands.Bot, guild: discord.Guild) -> discord
     embed.add_field(name="XP", value=f"Level-ups: {lvlch.mention if lvlch else '`Chat`'}\nStatus: {'✅ On' if xp_store.is_xp_enabled(guild.id) else '❌ Off'}", inline=True)
     embed.add_field(name="Members", value=f"{guild.member_count or len(guild.members)}", inline=True)
     embed.add_field(name="Roles/Channels", value=f"{len(guild.roles)} roles • {len(guild.channels)} channels", inline=True)
-    embed.set_footer(text="Use /config or buttons below to manage • Powered by sudo")
+    embed.set_footer(text="Use /config or buttons below to manage • Powered by alpha")
     return embed
 
 

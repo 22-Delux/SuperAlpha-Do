@@ -20,11 +20,11 @@ COLOR_GIVEAWAY = 0xE91E63
 COLOR_EVENT = 0x1ABC9C
 COLOR_DASHBOARD = 0x1ABC9C
 
-BRAND_NAME = "sudo"
-BRAND_FOOTER = "Powered by sudo • Clean. Fast. Reliable."
+BRAND_NAME = "alpha"
+BRAND_FOOTER = "Powered by alpha • Clean. Fast. Reliable."
 
 
-class SudoEmbed(discord.Embed):
+class AlphaEmbed(discord.Embed):
     def __init__(self, *args, **kwargs):
         color = kwargs.pop("color", COLOR_BRAND)
         footer_text = kwargs.pop("footer_text", None)

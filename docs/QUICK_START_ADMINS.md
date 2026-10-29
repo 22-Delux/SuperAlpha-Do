@@ -1,6 +1,6 @@
 # Quick Start Guide for Admins
 
-Get your server up and running with sudo-bot in minutes.
+Get your server up and running with SuperAlpha Do in minutes.
 
 ## Step 1: Invite the Bot
 
@@ -18,7 +18,7 @@ The easiest way to get started is with the guided setup wizard.
 
 **Using Prefix Commands:**
 ```
-sudo setup
+alpha setup
 ```
 
 The wizard will guide you through configuring:
@@ -38,7 +38,7 @@ For ongoing management, use the central admin dashboard:
 
 **Prefix Command:**
 ```
-sudo config
+alpha config
 ```
 
 The dashboard provides:
@@ -53,11 +53,11 @@ The dashboard provides:
 Enable and configure automod:
 
 ```
-sudo automod enable
-sudo automod word add <word>
-sudo automod mentions <number>
-sudo automod action <warn|delete|mute>
-sudo automod alert #channel
+alpha automod enable
+alpha automod word add <word>
+alpha automod mentions <number>
+alpha automod action <warn|delete|mute>
+alpha automod alert #channel
 ```
 
 Or use `/modsettings` for a toggle UI.
@@ -66,14 +66,14 @@ Or use `/modsettings` for a toggle UI.
 Set up comprehensive logging:
 
 ```
-sudo logsetup #logs
+alpha logsetup #logs
 ```
 
 ### Welcome Messages
 Configure welcome messages:
 
 ```
-sudo welcomesetup #welcome Welcome {user} to {server}!
+alpha welcomesetup #welcome Welcome {user} to {server}!
 ```
 
 Placeholders: `{user}`, `{user_name}`, `{server}`, `{member_count}`
@@ -83,12 +83,12 @@ Placeholders: `{user}`, `{user_name}`, `{server}`, `{member_count}`
 XP is enabled by default. Configure it:
 
 ```
-sudo levelchannel set #level-ups
+alpha levelchannel set #level-ups
 ```
 
 Or disable it:
 ```
-sudo levelchannel off
+alpha levelchannel off
 ```
 
 ## Quick Configuration via Commands
