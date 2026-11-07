@@ -45,15 +45,21 @@ The bot supports both prefix commands (`alpha <command>`) and slash commands (`/
 
 | Command | Type | Permission | Description |
 |---------|------|------------|-------------|
+| `alpha join` | Prefix | - | Join your voice channel |
 | `alpha play` / `/play` | Prefix/Slash | - | Play a song or add to queue |
 | `alpha pause` | Prefix | - | Pause playback |
 | `alpha resume` | Prefix | - | Resume playback |
 | `alpha skip` | Prefix | - | Skip current track |
-| `alpha stop` / `alpha leave` | Prefix | - | Stop and disconnect |
+| `alpha stop` | Prefix | - | Stop playback and clear the queue |
+| `alpha leave` | Prefix | - | Stop and disconnect |
 | `alpha queue` or `alpha q` | Prefix | - | View queue with premium UI |
 | `alpha nowplaying` or `alpha np` | Prefix | - | Show now playing with thumbnail |
 | `alpha loop` or `alpha repeat` | Prefix | - | Loop track or queue |
 | `alpha shuffle` | Prefix | - | Shuffle queue |
+| `alpha remove <position>` | Prefix | - | Remove a track from the queue |
+| `alpha clearqueue` | Prefix | - | Clear all queued tracks |
+| `alpha seek <MM:SS>` | Prefix | - | Jump to a position in the track |
+| `alpha replay` | Prefix | - | Replay the current track |
 | `alpha volume` or `alpha vol` | Prefix | - | Adjust volume (0-200) |
 | `alpha similar` / `/similar` | Prefix/Slash | - | Add similar song suggestion |
 | `alpha partymode` / `/partymode` | Prefix/Slash | - | Toggle party mode |
@@ -61,8 +67,17 @@ The bot supports both prefix commands (`alpha <command>`) and slash commands (`/
 | `alpha history` / `/history` | Prefix/Slash | - | View queue history |
 | `alpha favorite` or `alpha fav` | Prefix | - | Favorite current track |
 | `alpha favorites` or `alpha favs` | Prefix | - | Manage favorites |
-| `alpha myfavorites` or `alpha playlist` | Prefix | - | View your favorites |
+| `alpha myfavorites` | Prefix | - | View your saved favorites |
+| `alpha playlist` | Prefix | - | Create, manage, and play server playlists |
 | `alpha autoplay` | Prefix | - | Toggle autoplay |
+| `alpha bassboost` | Prefix | - | Toggle bass boost |
+| `alpha nightcore` | Prefix | - | Toggle nightcore |
+| `alpha 8d` | Prefix | - | Toggle 8D audio |
+| `alpha slowed` | Prefix | - | Toggle slowed + reverb |
+| `alpha equalizer <preset>` | Prefix | - | Set an equalizer preset |
+| `alpha lyrics [song]` | Prefix | - | Search for lyrics |
+| `alpha radio <genre>` | Prefix | - | Queue a genre radio mix |
+| `alpha refresh` | Prefix | Administrator | Reconnect Lavalink nodes and report pool health |
 
 ## XP & Levels
 

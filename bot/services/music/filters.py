@@ -1,87 +1,73 @@
-"""Audio filter graph for FFmpeg (bass, nightcore, 8D, EQ presets, ...)."""
+"""Lavalink audio filters (bass, nightcore, 8D, EQ presets, slowed, ...).
+
+Filters are applied server-side by Lavalink through :mod:`wavelink`, so the bot
+does no local audio processing.
+"""
 
 from __future__ import annotations
 
-from urllib.parse import urlsplit
+import wavelink
 
-# Matches a browser User-Agent so YouTube's CDN lets FFmpeg fetch the
-# signed googlevideo stream URL (plain ffmpeg requests get HTTP 403).
-_YOUTUBE_USER_AGENT = (
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-    "(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
-)
-
-
-EQ_PRESETS = {
-    "bass": "equalizer=f=100:width_type=o:width=2:g=15",
-    "treble": "equalizer=f=3000:width_type=o:width=2:g=10",
-    "pop": "equalizer=f=500:width_type=o:width=2:g=6,equalizer=f=3000:width_type=o:width=2:g=6",
-    "rock": "equalizer=f=100:width_type=o:width=2:g=8,equalizer=f=5000:width_type=o:width=2:g=8",
-    "jazz": "equalizer=f=200:width_type=o:width=2:g=5,equalizer=f=4000:width_type=o:width=2:g=5",
-    "classical": "equalizer=f=300:width_type=o:width=2:g=5,equalizer=f=2000:width_type=o:width=2:g=5",
-    "electronic": "equalizer=f=100:width_type=o:width=2:g=12,equalizer=f=5000:width_type=o:width=2:g=8",
+# Lavalink's equalizer has 15 bands.  Presets are gain maps; gains range from
+# -0.25 (muted) to 1.0 (doubled).
+EQ_PRESETS: dict[str, dict[int, float]] = {
+    "flat": {},
+    "bass": {0: 0.22, 1: 0.22, 2: 0.18, 3: 0.12, 4: 0.06},
+    "treble": {10: 0.08, 11: 0.12, 12: 0.16, 13: 0.18, 14: 0.18},
+    "pop": {3: 0.08, 6: 0.06, 10: 0.08, 13: 0.08},
+    "rock": {1: 0.12, 3: 0.08, 7: -0.04, 11: 0.08, 13: 0.12},
+    "jazz": {2: 0.08, 5: 0.06, 9: 0.04, 12: 0.06},
+    "classical": {4: 0.06, 7: 0.05, 10: 0.04, 13: 0.04},
+    "electronic": {0: 0.18, 1: 0.16, 2: 0.10, 11: 0.08, 13: 0.10},
 }
 
-
-def build_filter_string(player) -> str:
-    filters = []
-    if player.bassboost:
-        filters.append("bass=g=15")
-    if player.nightcore:
-        filters.append("asetrate=48000*1.25,aresample=48000")
-    if player.eight_d:
-        filters.append("aecho=0.8:0.9:50:0.5,aecho=0.8:0.9:70:0.4,apulsator=hz=0.3,stereowiden=1.5")
-    if player.slowed:
-        filters.append("asetrate=44100*0.75,aresample=44100,aecho=0.8:0.88:60:0.4")
-    eq = player.equalizer.lower()
-    if eq != "flat" and eq:
-        if eq in EQ_PRESETS:
-            filters.append(EQ_PRESETS[eq])
-    return ",".join(filters) if filters else ""
+VALID_PRESETS = tuple(EQ_PRESETS)
 
 
-def _is_youtube_stream(url: str) -> bool:
-    try:
-        host = (urlsplit(url).hostname or "").lower()
-    except ValueError:
-        return False
-    return host == "googlevideo.com" or host.endswith(".googlevideo.com")
+def _equalizer_bands(player) -> list[dict[str, float | int]]:
+    gains = dict(EQ_PRESETS.get((getattr(player, "equalizer", "flat") or "flat").lower(), {}))
+    if getattr(player, "bassboost", False):
+        for band, gain in EQ_PRESETS["bass"].items():
+            gains[band] = min(1.0, gains.get(band, 0.0) + gain)
+    return [{"band": band, "gain": max(-0.25, min(1.0, gains.get(band, 0.0)))} for band in range(15)]
 
 
-def get_ffmpeg_opts(
-    filter_str: str = "",
-    volume: float = 1.0,
-    *,
-    duration: float | None = None,
-    url: str = "",
-) -> dict:
-    """Build FFmpeg options for ``discord.FFmpegOpusAudio``.
+def build_filters(player) -> wavelink.Filters:
+    """Translate a :class:`GuildPlayer`'s settings into Lavalink filters."""
+    filters = wavelink.Filters()
 
-    Volume is applied in the FFmpeg filter graph (``volume=X``) so callers
-    do not need ``PCMVolumeTransformer``. ``-threads 1`` caps per-stream
-    FFmpeg thread spawn.
-    """
-    before = (
-        "-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5 "
-        "-thread_queue_size 8192"
-    )
-    if _is_youtube_stream(url):
-        before += (
-            f' -user_agent "{_YOUTUBE_USER_AGENT}"'
-            ' -headers "Referer: https://www.youtube.com/\r\n"'
-        )
-    options = "-vn -bufsize 384k -maxrate 256k -threads 1"
+    bands = _equalizer_bands(player)
+    if any(band["gain"] for band in bands):
+        filters.equalizer.set(bands=bands)
 
-    filters: list[str] = []
-    if filter_str:
-        filters.append(filter_str)
-    filters.append(f"volume={volume}")
-    options += f' -af "{",".join(filters)}"'
+    if getattr(player, "nightcore", False):
+        filters.timescale.set(speed=1.3, pitch=1.3, rate=1.0)
 
-    if duration is not None:
-        options += f" -t {duration}"
+    if getattr(player, "slowed", False):
+        filters.timescale.set(speed=0.8, pitch=0.8, rate=1.0)
+        filters.low_pass.set(smoothing=20.0)
 
-    return {
-        "before_options": before,
-        "options": options,
-    }
+    if getattr(player, "eight_d", False):
+        filters.rotation.set(rotation_hz=0.2)
+
+    return filters
+
+
+def describe_filters(player) -> str:
+    """Human-readable list of active effects, for status embeds."""
+    active: list[str] = []
+    if getattr(player, "bassboost", False):
+        active.append("bass boost")
+    if getattr(player, "nightcore", False):
+        active.append("nightcore")
+    if getattr(player, "slowed", False):
+        active.append("slowed + reverb")
+    if getattr(player, "eight_d", False):
+        active.append("8D audio")
+    preset = (getattr(player, "equalizer", "flat") or "flat").lower()
+    if preset != "flat":
+        active.append(f"{preset} EQ")
+    return ", ".join(active) if active else "none"
+
+
+__all__ = ["EQ_PRESETS", "VALID_PRESETS", "build_filters", "describe_filters"]

@@ -1,7 +1,7 @@
 discord.py
 python-dotenv
 aiohttp
-yt-dlp
+wavelink
 PyNaCl
 pyfiglet
 psutil

@@ -9,9 +9,6 @@ venv/
 env/
 ENV/
 
-# Cookies
-cookies.txt
-
 # User data & caches
 data/
 __pycache__/

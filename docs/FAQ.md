@@ -24,18 +24,21 @@
 
 ## Music Issues
 
-### Q: The bot says "The page needs to be reloaded" or has YouTube errors
-**A:** This is common with YouTube's bot protection. Solutions:
-1. Make sure you have a valid `cookies.txt` file in the bot directory
-2. For better results on flagged hosts, set up a PO token provider with `POT_SERVER_URL`
-3. Use the `alpha refresh` command after updating cookies
-4. Try different tracks - some may work better than others
+### Q: The bot says music is offline or a node is unavailable
+**A:** Music is streamed by Lavalink nodes. The bot ships with a pool of public
+nodes and automatically retries on another node, but public nodes can be busy or
+down. Try again shortly, or configure your own nodes:
+1. Add `LAVALINK_NODES` to `.env` as `identifier|uri|password` entries
+   (separate multiple nodes with `;`)
+2. Run `alpha refresh` to reconnect disconnected nodes and see which are online
+3. Make sure the Lavalink server is reachable from the bot host and uses v4
 
 ### Q: Music won't play or bot won't join VC
 **A:** Check that:
 - The bot has Connect and Speak permissions in the voice channel
 - You're in a voice channel
 - The bot isn't already in another channel in the same server
+- At least one Lavalink node is online (`alpha refresh`)
 
 ### Q: How do I use the premium music features?
 **A:** All premium features are available by default:

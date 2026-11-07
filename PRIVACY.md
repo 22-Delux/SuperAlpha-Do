@@ -170,8 +170,8 @@ their own privacy policies apply. The data sent is limited to what the feature n
 | **GitHub** (`api.github.com`) | Suggestion text and your Discord mention, when a suggestion is linked to an issue | Create/link GitHub issues; read public repository metadata |
 | **Spotify** (`open.spotify.com`, `api.spotify.com`, `accounts.spotify.com`) | The Spotify track ID from a link you paste | Resolve a Spotify link to a song title and artist |
 | **Apple / iTunes** (`itunes.apple.com`) | The Apple Music song ID from a link you paste | Resolve an Apple Music link to a song title and artist |
-| **YouTube / Google** (via `yt-dlp`) | Your search term or the URL you paste; request headers; YouTube session cookies if configured by the Operator | Find and stream audio for playback |
-| **SoundCloud, Bandcamp, Twitch** (via `yt-dlp`) | The URL you paste | Play audio from those platforms |
+| **YouTube / SoundCloud / Bandcamp / Twitch** (via Lavalink) | Your search term or the URL you paste, sent to the Lavalink node that handles playback | Find and stream audio for playback |
+| **Lavalink nodes** (public pool or Operator-configured) | Your search term, pasted URL, and Discord voice-channel/guild identifiers needed to route audio | Resolve and stream audio; the Bot's public-node pool may change between requests |
 | **JokeAPI** (`v2.jokeapi.dev`) | No personal data (fixed category) | Joke command |
 | **ZenQuotes** (`zenquotes.io`) | No personal data | Quote command |
 | **Wikipedia** (`en.wikipedia.org`) | Your search term | Wiki command |
@@ -215,8 +215,8 @@ purposes above, but retention varies by feature:
 
 We take reasonable measures to protect the data we hold:
 
-- Secrets (the Discord token, API keys and any YouTube cookies) are kept in an
-  environment file that is **not** committed to source control.
+- Secrets (the Discord token, API keys, and any Lavalink node passwords) are kept
+  in an environment file that is **not** committed to source control.
 - User and server identifiers in the server activity journal are stored in **hashed**
   form.
 - Attachment images are held in memory with strict size and count limits, and are

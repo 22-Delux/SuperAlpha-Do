@@ -5,6 +5,9 @@ The bot joins your VC, plays the first few seconds of a random track, and
 players race to name the song in the text channel. The first correct answer
 wins and earns XP.
 
+Playback goes through the music cog's Wavelink/Lavalink player, so the game
+inherits the same node pool and failover behaviour as normal music commands.
+
 Commands: guessthesong (guesssong, songquiz, gts)
 """
 
@@ -16,10 +19,12 @@ import time
 import unicodedata
 
 import discord
+import wavelink
 from discord.ext import commands
 
 from bot.models.xp_store import is_xp_enabled
 from bot.services.leveling import award_game_xp
+from bot.services.music import NoNodesAvailable, build_filters
 
 PREVIEW_SECONDS = 8
 GUESS_WINDOW = 30
@@ -94,6 +99,25 @@ class MusicGames(commands.Cog, name="musicgames"):
             return True
         return False
 
+    @staticmethod
+    def _play_kwargs(music_player, *, end: int | None = None) -> dict:
+        return {
+            "volume": int(max(0, min(1000, music_player.volume * 100))),
+            "filters": build_filters(music_player),
+            "end": end,
+        }
+
+    async def _play_preview(self, music, vc: wavelink.Player, track, music_player) -> None:
+        """Play the preview, switching nodes if the current one refuses."""
+        kwargs = self._play_kwargs(music_player, end=PREVIEW_SECONDS * 1000)
+        try:
+            await vc.play(track.playable, **kwargs)
+        except Exception:
+            new_node = await music.nodes.failover_player(vc)
+            if new_node is None:
+                raise
+            await vc.play(track.playable, **kwargs)
+
     @commands.command(name="guessthesong", aliases=["guesssong", "songquiz", "gts"])
     @commands.cooldown(1, 60, commands.BucketType.channel)
     async def guess_the_song(self, ctx: commands.Context, *, hint: str = "") -> None:
@@ -132,28 +156,36 @@ class MusicGames(commands.Cog, name="musicgames"):
             await ctx.send(embed=embed)
             return
 
-        if not ctx.voice_client:
-            try:
-                await vc_channel.connect()
-            except Exception as e:
-                embed = self._make_embed(
-                    "❌ Connection Failed", 0xE74C3C, f"Could not join voice channel: {e}"
-                )
-                await ctx.send(embed=embed)
-                return
+        try:
+            vc = await music._ensure_voice(ctx)
+        except NoNodesAvailable:
+            embed = self._make_embed(
+                "❌ Music Offline", 0xE74C3C,
+                "No Lavalink nodes are available right now. Please try again shortly.",
+            )
+            await ctx.send(embed=embed)
+            return
+        except Exception as e:
+            embed = self._make_embed(
+                "❌ Connection Failed", 0xE74C3C, f"Could not join voice channel: {e}"
+            )
+            await ctx.send(embed=embed)
+            return
 
         music_player = music._get_player(guild_id)
-        vc = ctx.voice_client
         saved_current = music_player.current
-        saved_paused = bool(vc and vc.is_paused())
-        was_playing = bool(vc and (vc.is_playing() or saved_paused))
+        saved_paused = bool(getattr(vc, "paused", False))
+        was_playing = bool(getattr(vc, "playing", False) or saved_paused)
 
         music_player.game_active = True
         self._active[guild_id] = {"vc_channel": vc_channel, "text_channel": ctx.channel}
 
         try:
-            if was_playing and vc:
-                vc.stop()
+            if was_playing:
+                try:
+                    await vc.stop()
+                except Exception:
+                    pass
 
             query = hint.strip() or random.choice(SEARCH_POOL)
 
@@ -167,7 +199,7 @@ class MusicGames(commands.Cog, name="musicgames"):
 
             music._last_fetch_error = None
             track = await music._fetch_track(query, ctx.author)
-            if track is None:
+            if track is None or track.playable is None:
                 embed = self._make_embed(
                     "❌ Fetch Failed", 0xE74C3C,
                     getattr(music, "_last_fetch_error", None)
@@ -184,12 +216,7 @@ class MusicGames(commands.Cog, name="musicgames"):
                 "Type the song name in this chat to guess!",
             )
             try:
-                preview = music._make_audio_source(
-                    track.stream_url,
-                    music_player,
-                    duration=PREVIEW_SECONDS,
-                )
-                vc.play(preview, after=lambda e: None)
+                await self._play_preview(music, vc, track, music_player)
             except Exception as e:
                 embed = self._make_embed(
                     "❌ Playback Failed", 0xE74C3C, f"Could not play the preview: {e}"
@@ -266,9 +293,9 @@ class MusicGames(commands.Cog, name="musicgames"):
                     except Exception:
                         pass
 
-            if vc and vc.is_playing():
+            if getattr(vc, "playing", False):
                 try:
-                    vc.stop()
+                    await vc.stop()
                 except Exception:
                     pass
 
@@ -314,41 +341,25 @@ class MusicGames(commands.Cog, name="musicgames"):
 
             try:
                 vc = ctx.guild.voice_client
-                if saved_current and was_playing and vc:
-                    if vc.is_playing():
-                        vc.stop()
-                    await asyncio.sleep(0.3)
-                    if await music._refresh_stream_url(saved_current):
-                        source = music._make_audio_source(saved_current.stream_url, player)
-
-                        def resume_after(error: Exception | None) -> None:
-                            if error:
-                                print(f"Resume playback error: {error}")
-                            try:
-                                asyncio.run_coroutine_threadsafe(
-                                    music._play_next(guild_id), self.bot.loop
-                                )
-                            except Exception:
-                                pass
-
-                        player.current = saved_current
-                        player._start_time = (
-                            asyncio.get_event_loop().time()
-                            if asyncio.get_event_loop().is_running() else 0
-                        )
-                        vc.play(source, after=resume_after)
+                if (
+                    saved_current
+                    and was_playing
+                    and isinstance(vc, wavelink.Player)
+                    and saved_current.playable is not None
+                ):
+                    try:
+                        await music._play_track(guild_id, saved_current)
                         if saved_paused:
-                            vc.pause()
+                            await vc.pause(True)
                         await music._update_presence(saved_current, ctx.guild)
                         await ctx.send(embed=self._make_embed(
                             "▶️ Resumed", 0x3498DB,
                             "Resumed your music queue after the game.",
                         ))
-                    else:
+                    except Exception as e:
                         await ctx.send(embed=self._make_embed(
-                            "❌ Resume Failed",
-                            0xE74C3C,
-                            "Could not refresh the previous track after the game.",
+                            "❌ Resume Failed", 0xE74C3C,
+                            f"Could not resume the previous track after the game: {e}",
                         ))
                 elif not saved_current and vc:
                     try:

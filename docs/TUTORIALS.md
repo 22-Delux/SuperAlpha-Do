@@ -119,6 +119,7 @@ Learn to use all the premium music features.
 
 ### Tips
 - Use slash commands for music too: `/play`, `/similar`, etc.
+- If music reports that nodes are offline, wait a moment and retry — the bot automatically moves to another Lavalink node. Admins can run `alpha refresh` to reconnect nodes.
 - Party mode makes the queue experience more fun
 - DJ mode gives enhanced control
 
