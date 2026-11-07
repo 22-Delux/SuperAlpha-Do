@@ -52,12 +52,15 @@ log = logging.getLogger(__name__)
 # to another node.  Lavalink session resumption is usually much faster than this.
 NODE_FAILOVER_GRACE = 12.0
 
-EMOJI_MUSIC_PLAY = "<a:musicplay:1485243787084042270>"
-EMOJI_MUSIC_PAUSE = "<a:musicpause:1485244346386350111>"
-EMOJI_MUSIC_STOP = "⏹️"
-EMOJI_MUSIC_SHUFFLE = "<a:musicshuffle:1485245854548885626>"
-EMOJI_MUSIC_LOOP = "<a:musicloop:1485246094505017515>"
-EMOJI_MUSIC_VOL = "<a:musicvol:1485246400940867695>"
+from bot.emojis import (
+    EMOJI_MUSIC_PLAY,
+    EMOJI_MUSIC_PAUSE,
+    EMOJI_MUSIC_STOP,
+    EMOJI_MUSIC_SHUFFLE,
+    EMOJI_MUSIC_LOOP,
+    EMOJI_MUSIC_VOL,
+    EMOJI_DANCE,
+)
 
 __all__ = ["Music", "Track", "GuildPlayer", "build_filters", "NodeManager"]
 
@@ -173,6 +176,12 @@ class Music(commands.Cog, name="music"):
                 "The music node hit an error while playing. Trying the next track.",
             ),
         )
+        guild = wl_player.guild
+        voice_client = guild.voice_client if guild else None
+        if isinstance(voice_client, wavelink.Player) and voice_client.playing:
+            await self._skip_current(guild.id)
+        else:
+            await self._play_next_impl(guild.id)
 
     @commands.Cog.listener()
     async def on_wavelink_track_stuck(self, payload: "wavelink.TrackStuckEventPayload") -> None:
@@ -236,7 +245,7 @@ class Music(commands.Cog, name="music"):
             if voice_client:
                 if track:
                     await voice_client.channel.edit(
-                        status=f"<a:dance:1484553189964644352> Listening: {track.title[:100]}"
+                        status=f"{EMOJI_DANCE} Listening: {track.title[:100]}"
                     )
                 else:
                     await voice_client.channel.edit(status=None)
@@ -617,7 +626,10 @@ class Music(commands.Cog, name="music"):
         if isinstance(result, wavelink.Playlist):
             playables = list(result.tracks)
         else:
-            playables = list(result or [])
+            # A plain search returns many candidates; only the top result is
+            # queued for a "play a single song" request so we don't flood the
+            # queue (and trip Discord's 1024-char embed limit).
+            playables = list(result or [])[:1]
 
         if not playables:
             self._last_fetch_error = f"Could not find **'{query}'**"
@@ -975,11 +987,14 @@ class Music(commands.Cog, name="music"):
             )
         if player.queue:
             lines = []
-            for i, t in enumerate(list(player.queue)[:20]):
+            for i, t in enumerate(list(player.queue)[:5]):
                 lines.append(f"`{i + 1}.` [{t.title}]({t.url}) [{t.fmt_duration()}] • {t.requester.mention}")
-            if len(player.queue) > 20:
-                lines.append(f"… and **{len(player.queue) - 20}** more tracks")
-            embed.add_field(name=f"Up Next ({len(player.queue)} tracks)", value="\n".join(lines), inline=False)
+            if len(player.queue) > 5:
+                lines.append(f"… and **{len(player.queue) - 5}** more tracks")
+            value = "\n".join(lines)
+            if len(value) > 1024:
+                value = value[:1021] + "…"
+            embed.add_field(name=f"Up Next ({len(player.queue)} tracks)", value=value, inline=False)
         else:
             embed.add_field(name="Up Next", value="Empty", inline=False)
         embed.add_field(name="Loop / Repeat", value=self._loop_state(player), inline=True)

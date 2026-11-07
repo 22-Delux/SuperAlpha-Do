@@ -14,6 +14,7 @@ import random
 import asyncio
 import aiohttp
 import math
+from bot.emojis import EMOJI_TUX_PAT
 
 
 EIGHT_BALL_RESPONSES = [
@@ -418,13 +419,13 @@ class Fun(commands.Cog, name="fun"):
             if isinstance(ctx.channel, discord.TextChannel):
                 webhook = await ctx.channel.create_webhook(name="alpha")
                 await webhook.send(
-                    f"{ctx.author.mention} pats {member.mention} UwU\n<a:tuxpat:1485238409437118556>",
+                    f"{ctx.author.mention} pats {member.mention} UwU\n{EMOJI_TUX_PAT}",
                     username=ctx.bot.user.name,
                     avatar_url=ctx.bot.user.display_avatar.url,
                 )
                 await webhook.delete()
         except discord.Forbidden:
-            await ctx.send(f"{ctx.author.mention} pats {member.mention} UwU\n<a:tuxpat:1485238409437118556>")
+            await ctx.send(f"{ctx.author.mention} pats {member.mention} UwU\n{EMOJI_TUX_PAT}")
         try:
             await ctx.message.delete()
         except:
