@@ -75,7 +75,7 @@ async def load_cogs() -> None:
             await bot.load_extension(cog)
             log.info("Loaded cog: %s", cog)
         except Exception as exc:
-            log.error("Failed to load cog %s: %s", cog, exc)
+            log.exception("Failed to load cog %s: %s", cog, exc)
 
 
 # ── Events ─────────────────────────────────────────────────────────────────────
