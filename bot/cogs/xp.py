@@ -28,7 +28,6 @@ from bot.models.xp_store import (
     set_xp_enabled,
     top_users,
     migrate_legacy_data_to_postgres,
-    reset_weekly_leaderboard,
 )
 from bot.services.users import GlobalUser, GuildMember
 from bot.services.embeds import leaderboard_embed, xp_embed, brand_embed, COLOR_XP, COLOR_SUCCESS, COLOR_INFO, add_author_brand
@@ -66,48 +65,16 @@ class XP(commands.Cog, name="xp"):
         self._vc_sessions: dict[int, float] = {}
         self._last_message: dict[int, float] = {}
 
-    async def _leaderboard_name(
-        self, user_id: int, guild: discord.Guild | None = None
-    ) -> str:
-        user = guild.get_member(user_id) if guild is not None else None
-        if user is None:
-            user = self.bot.get_user(user_id)
-        if user is None:
-            try:
-                user = await self.bot.fetch_user(user_id)
-            except discord.NotFound:
-                return f"Unknown user ({user_id})"
-        return user.display_name[:15]
-
     async def cog_load(self) -> None:
         if hasattr(self.bot, "db") and self.bot.db:
             await init_db(self.bot.db)
             
             # UNCOMMENT THIS TO MIGRATE LEGACY DATA (Already done by the GOAT Peikaw)
             # await migrate_legacy_data_to_postgres(self.bot.db)
-        self._weekly_reset_task = asyncio.create_task(self._weekly_reset_loop())
 
     async def cog_unload(self) -> None:
-        if getattr(self, "_weekly_reset_task", None) is not None and not self._weekly_reset_task.done():
-            self._weekly_reset_task.cancel()
-            self._weekly_reset_task = None
         self._vc_sessions.clear()
         self._last_message.clear()
-
-    async def _weekly_reset_loop(self) -> None:
-        IST = timezone(timedelta(hours=5, minutes=30))
-        while True:
-            now = datetime.now(IST)
-            days_until_monday = (0 - now.weekday()) % 7
-            next_reset = now.replace(hour=0, minute=0, second=0, microsecond=0) + timedelta(days=days_until_monday)
-            if next_reset <= now:
-                next_reset += timedelta(days=7)
-            await asyncio.sleep((next_reset - now).total_seconds())
-            if hasattr(self.bot, "db") and self.bot.db:
-                try:
-                    await reset_weekly_leaderboard(self.bot.db)
-                except Exception:
-                    pass
 
     @commands.Cog.listener()
     async def on_message(self, message: discord.Message) -> None:
@@ -135,8 +102,6 @@ class XP(commands.Cog, name="xp"):
 
         data["xp"] += xp_gain
         data["sp"] += sp_gain
-        data["weekly_xp"] = data.get("weekly_xp", 0) + xp_gain
-        data["weekly_sp"] = data.get("weekly_sp", 0) + sp_gain
 
         old_level = data["level"]
         data["level"] = level_from_xp(data["xp"])
@@ -192,9 +157,6 @@ class XP(commands.Cog, name="xp"):
                     data["xp"] += xp_gain
                     data["sp"] += sp_gain
                     data["vc_time"] += int(elapsed)
-                    data["weekly_xp"] = data.get("weekly_xp", 0) + xp_gain
-                    data["weekly_sp"] = data.get("weekly_sp", 0) + sp_gain
-                    data["weekly_vc_time"] = data.get("weekly_vc_time", 0) + int(elapsed)
                     data["level"] = level_from_xp(data["xp"])
 
                 data["vc_start"] = 0
@@ -206,8 +168,6 @@ class XP(commands.Cog, name="xp"):
         sp_gain = random.randint(1, 2)
         data["xp"] += xp_gain
         data["sp"] += sp_gain
-        data["weekly_xp"] = data.get("weekly_xp", 0) + xp_gain
-        data["weekly_sp"] = data.get("weekly_sp", 0) + sp_gain
         data["commands_used"] += 1
         data["level"] = level_from_xp(data["xp"])
         await save_user(self.bot.db, user_id, data)
@@ -294,19 +254,21 @@ class XP(commands.Cog, name="xp"):
         lines = []
         medals = ["🥇", "🥈", "🥉"]
         for i, (user_id, data) in enumerate(top):
-            name = await self._leaderboard_name(user_id, ctx.guild)
-            if type.lower() == "vc":
-                mins = data["vc_time"] // 60
-                val = f"{mins // 60}h {mins % 60}m"
-            elif type.lower() == "messages":
-                val = f"{data['messages']:,}"
-            elif type.lower() == "sp":
-                val = f"{data['sp']:,}"
-            else:
-                val = f"{data['xp']:,}"
+            user = self.bot.get_user(user_id)
+            if user:
+                name = user.display_name[:15]
+                if type.lower() == "vc":
+                    mins = data["vc_time"] // 60
+                    val = f"{mins // 60}h {mins % 60}m"
+                elif type.lower() == "messages":
+                    val = f"{data['messages']:,}"
+                elif type.lower() == "sp":
+                    val = f"{data['sp']:,}"
+                else:
+                    val = f"{data['xp']:,}"
 
-            medal = medals[i] if i < 3 else f"`{i+1}.`"
-            lines.append(f"{medal} **{name}** — {data['level']} lvl — {val} {field_name}")
+                medal = medals[i] if i < 3 else f"`{i+1}.`"
+                lines.append(f"{medal} **{name}** — {data['level']} lvl — {val} {field_name}")
 
         embed.description = "\n".join(lines)
         embed.set_footer(text=f"Showing top {len(top)} | Use 'alpha lb sp/messages/vc' for different rankings")
@@ -483,19 +445,20 @@ class XP(commands.Cog, name="xp"):
         lines = []
         medals = ["🥇", "🥈", "🥉"]
         for i, (user_id, data) in enumerate(top):
-            name = await self._leaderboard_name(user_id, interaction.guild)
-
-            if type == "vc":
-                mins = data["vc_time"] // 60
-                val = f"{mins // 60}h {mins % 60}m"
-            elif type == "messages":
-                val = f"{data['messages']:,}"
-            elif type == "sp":
-                val = f"{data['sp']:,}"
-            else:
-                val = f"{data['xp']:,}"
-            medal = medals[i] if i < 3 else f"`{i+1}.`"
-            lines.append(f"{medal} **{name}** — {data['level']} lvl — {val} {field_name}")
+            user = self.bot.get_user(user_id)
+            if user:
+                name = user.display_name[:15]
+                if type == "vc":
+                    mins = data["vc_time"] // 60
+                    val = f"{mins // 60}h {mins % 60}m"
+                elif type == "messages":
+                    val = f"{data['messages']:,}"
+                elif type == "sp":
+                    val = f"{data['sp']:,}"
+                else:
+                    val = f"{data['xp']:,}"
+                medal = medals[i] if i < 3 else f"`{i+1}.`"
+                lines.append(f"{medal} **{name}** — {data['level']} lvl — {val} {field_name}")
 
         embed.description = "\n".join(lines)
         await interaction.followup.send(embed=embed)
@@ -586,10 +549,10 @@ class XP(commands.Cog, name="xp"):
             embed = self._make_embed("❌ Permission Denied", 0xE74C3C, "You need **Administrator** permission to use this command.")
             await ctx.send(embed=embed)
 
-    @commands.command(name="xpgrant", hidden=True)
+    @commands.command(name="addxp", aliases=["givexp", "grantxp"], hidden=True)
     @commands.is_owner()
     async def addxp(self, ctx: commands.Context, member: discord.Member, amount: int) -> None:
-        """[Owner] Add or remove XP for a user. Usage: alpha xpgrant <user> <amount>"""
+        """[Owner] Add or remove XP for a user. Usage: alpha addxp <user> <amount>"""
         if amount == 0:
             embed = self._make_embed("❌ Invalid Amount", 0xE74C3C, "Amount must not be zero")
             await ctx.send(embed=embed)
@@ -605,22 +568,6 @@ class XP(commands.Cog, name="xp"):
         embed.description = (
             f"**{member.mention}** — **{old_xp:,} → {new_xp:,} XP** (`{amount:+d}`) · **Level {new_level}**"
         )
-        await ctx.send(embed=embed)
-
-    @commands.command(name="addsp", aliases=["givesp", "grantsp", "stealsp", "removesp"], hidden=True)
-    @commands.is_owner()
-    async def addsp(self, ctx: commands.Context, member: discord.Member, amount: int) -> None:
-        """[Owner] Add or remove SP for a user. Usage: alpha addsp <user> <amount>"""
-        if amount == 0:
-            await ctx.send(embed=self._make_embed("❌ Invalid Amount", 0xE74C3C, "Amount must not be zero"))
-            return
-        data = await load_user(ctx.bot.db, member.id)
-        data["sp"] += amount
-        data["weekly_sp"] = data.get("weekly_sp", 0) + amount
-        await save_user(ctx.bot.db, member.id, data)
-        embed = discord.Embed(color=0x2ECC71 if amount > 0 else 0xE74C3C)
-        embed.set_author(name="✅ SP Updated" if amount > 0 else "❌ SP Removed")
-        embed.description = f"**{member.mention}** — **{data['sp'] - amount:,} → {data['sp']:,} SP** (`{amount:+d}`)"
         await ctx.send(embed=embed)
 
     @addxp.error
