@@ -28,6 +28,7 @@ from bot.models.xp_store import (
     set_xp_enabled,
     top_users,
     migrate_legacy_data_to_postgres,
+    reset_weekly_leaderboard,
 )
 from bot.services.users import GlobalUser, GuildMember
 from bot.services.embeds import leaderboard_embed, xp_embed, brand_embed, COLOR_XP, COLOR_SUCCESS, COLOR_INFO, add_author_brand
@@ -71,10 +72,29 @@ class XP(commands.Cog, name="xp"):
             
             # UNCOMMENT THIS TO MIGRATE LEGACY DATA (Already done by the GOAT Peikaw)
             # await migrate_legacy_data_to_postgres(self.bot.db)
+        self._weekly_reset_task = asyncio.create_task(self._weekly_reset_loop())
 
     async def cog_unload(self) -> None:
+        if getattr(self, "_weekly_reset_task", None) is not None and not self._weekly_reset_task.done():
+            self._weekly_reset_task.cancel()
+            self._weekly_reset_task = None
         self._vc_sessions.clear()
         self._last_message.clear()
+
+    async def _weekly_reset_loop(self) -> None:
+        IST = timezone(timedelta(hours=5, minutes=30))
+        while True:
+            now = datetime.now(IST)
+            days_until_monday = (0 - now.weekday()) % 7
+            next_reset = now.replace(hour=0, minute=0, second=0, microsecond=0) + timedelta(days=days_until_monday)
+            if next_reset <= now:
+                next_reset += timedelta(days=7)
+            await asyncio.sleep((next_reset - now).total_seconds())
+            if hasattr(self.bot, "db") and self.bot.db:
+                try:
+                    await reset_weekly_leaderboard(self.bot.db)
+                except Exception:
+                    pass
 
     @commands.Cog.listener()
     async def on_message(self, message: discord.Message) -> None:
@@ -224,24 +244,34 @@ class XP(commands.Cog, name="xp"):
         await ctx.send(embed=embed)
 
     @commands.command(name="leaderboard", aliases=["lb", "top"])
-    async def leaderboard(self, ctx: commands.Context, type: str = "xp") -> None:
-        """View the leaderboard. Usage: alpha leaderboard [xp|sp|messages|vc]"""
-        type_key = type.lower()
-        if type_key == "sp":
-            title = "💰 SP Leaderboard"
-            field_name = "SP"
-        elif type_key == "messages":
-            title = "💬 Messages Leaderboard"
-            field_name = "Messages"
-        elif type_key == "vc":
-            title = "🎤 VC Time Leaderboard"
-            field_name = "VC Time"
-        else:
-            type_key = "xp"
-            title = "⭐ XP Leaderboard"
-            field_name = "XP"
+    async def leaderboard(self, ctx: commands.Context, first: str = "xp", second: str = None) -> None:
+        scope = "universal"
+        type_key = "xp"
+        for val in (first, second):
+            if val is None:
+                continue
+            low = str(val).lower()
+            if low in ("universal", "guild", "server", "global"):
+                scope = "universal" if low in ("universal", "global") else "guild"
+                if low == "server":
+                    scope = "guild"
+            elif low in ("xp", "sp", "messages", "vc"):
+                type_key = low
 
-        top = await top_users(ctx.bot.db, type_key, 10)
+        weekly = scope == "universal"
+        user_ids = None
+        if scope == "guild" and ctx.guild is not None:
+            user_ids = [m.id for m in getattr(ctx.guild, "members", []) if not getattr(m, "bot", False)]
+            if not user_ids:
+                user_ids = None
+
+        top = await top_users(ctx.bot.db, type_key, 10, weekly=weekly, user_ids=user_ids)
+
+        field_name = {"sp": "SP", "messages": "Messages", "vc": "VC Time", "xp": "XP"}[type_key]
+        if scope == "universal":
+            title = "🌍 Universal Leaderboard — " + field_name
+        else:
+            title = "🏠 Guild Leaderboard — " + field_name
 
         embed = discord.Embed(color=0xF1C40F)
         embed.set_author(name=title)
@@ -254,25 +284,89 @@ class XP(commands.Cog, name="xp"):
         lines = []
         medals = ["🥇", "🥈", "🥉"]
         for i, (user_id, data) in enumerate(top):
-            user = self.bot.get_user(user_id)
-            if user:
-                name = user.display_name[:15]
-                if type.lower() == "vc":
-                    mins = data["vc_time"] // 60
-                    val = f"{mins // 60}h {mins % 60}m"
-                elif type.lower() == "messages":
-                    val = f"{data['messages']:,}"
-                elif type.lower() == "sp":
-                    val = f"{data['sp']:,}"
-                else:
-                    val = f"{data['xp']:,}"
+            user = None
+            if ctx.guild is not None:
+                user = ctx.guild.get_member(user_id)
+            if user is None:
+                user = self.bot.get_user(user_id)
+            name = user.display_name[:15] if user is not None and hasattr(user, "display_name") else f"User {user_id}"
 
-                medal = medals[i] if i < 3 else f"`{i+1}.`"
-                lines.append(f"{medal} **{name}** — {data['level']} lvl — {val} {field_name}")
+            if type_key == "vc":
+                mins = data["vc_time"] // 60
+                val = f"{mins // 60}h {mins % 60}m"
+            elif type_key == "messages":
+                val = f"{data['messages']:,}"
+            elif type_key == "sp":
+                val = f"{data['sp']:,}"
+            else:
+                val = f"{data['xp']:,}"
+
+            medal = medals[i] if i < 3 else f"`{i+1}.`"
+            lines.append(f"{medal} **{name}** — {data['level']} lvl — {val} {field_name}")
 
         embed.description = "\n".join(lines)
-        embed.set_footer(text=f"Showing top {len(top)} | Use 'alpha lb sp/messages/vc' for different rankings")
+        embed.set_footer(text=f"Showing top {len(top)} | Universal resets Monday 00:00 IST")
         await ctx.send(embed=embed)
+
+    async def _is_superuser(self, user) -> bool:
+        try:
+            if getattr(self.bot, "owner_ids", None) and user.id in self.bot.owner_ids:
+                return True
+            if getattr(self.bot, "owner_id", None) == user.id:
+                return True
+            return await self.bot.is_owner(user)
+        except Exception:
+            return False
+
+    @commands.command(name="givexp", aliases=["addxp", "grantxp"])
+    async def givexp(self, ctx: commands.Context, member: discord.Member, amount: int) -> None:
+        """Give XP to a user (superuser only). Usage: alpha givexp @user <amount>"""
+        if not await self._is_superuser(ctx.author):
+            await ctx.send(embed=self._make_embed("❌ Permission Denied", 0xE74C3C, "Superuser only."))
+            return
+        data = await load_user(ctx.bot.db, member.id)
+        data["xp"] = int(data.get("xp", 0)) + amount
+        data["weekly_xp"] = int(data.get("weekly_xp", 0)) + amount
+        data["level"] = level_from_xp(data["xp"])
+        await save_user(ctx.bot.db, member.id, data)
+        await ctx.send(embed=self._make_embed("⭐ XP Given", 0x2ECC71, f"Gave **{amount:,} XP** to {member.mention}. New total: **{data['xp']:,}**"))
+
+    @commands.command(name="givesp", aliases=["addsp", "grantsp"])
+    async def givesp(self, ctx: commands.Context, member: discord.Member, amount: int) -> None:
+        """Give SP to a user (superuser only). Usage: alpha givesp @user <amount>"""
+        if not await self._is_superuser(ctx.author):
+            await ctx.send(embed=self._make_embed("❌ Permission Denied", 0xE74C3C, "Superuser only."))
+            return
+        data = await load_user(ctx.bot.db, member.id)
+        data["sp"] = int(data.get("sp", 0)) + amount
+        data["weekly_sp"] = int(data.get("weekly_sp", 0)) + amount
+        await save_user(ctx.bot.db, member.id, data)
+        await ctx.send(embed=self._make_embed("💰 SP Given", 0x2ECC71, f"Gave **{amount:,} SP** to {member.mention}. New total: **{data['sp']:,}**"))
+
+    @commands.command(name="stealxp", aliases=["removexp", "takexp"])
+    async def stealxp(self, ctx: commands.Context, member: discord.Member, amount: int) -> None:
+        """Steal/remove XP from a user (superuser only). Usage: alpha stealxp @user <amount>"""
+        if not await self._is_superuser(ctx.author):
+            await ctx.send(embed=self._make_embed("❌ Permission Denied", 0xE74C3C, "Superuser only."))
+            return
+        data = await load_user(ctx.bot.db, member.id)
+        data["xp"] = int(data.get("xp", 0)) - amount
+        data["weekly_xp"] = int(data.get("weekly_xp", 0)) - amount
+        data["level"] = level_from_xp(max(0, data["xp"]))
+        await save_user(ctx.bot.db, member.id, data)
+        await ctx.send(embed=self._make_embed("⭐ XP Stolen", 0xE74C3C, f"Removed **{amount:,} XP** from {member.mention}. New total: **{data['xp']:,}**"))
+
+    @commands.command(name="stealsp", aliases=["removesp", "taksp"])
+    async def stealsp(self, ctx: commands.Context, member: discord.Member, amount: int) -> None:
+        """Steal/remove SP from a user (superuser only). Usage: alpha stealsp @user <amount>"""
+        if not await self._is_superuser(ctx.author):
+            await ctx.send(embed=self._make_embed("❌ Permission Denied", 0xE74C3C, "Superuser only."))
+            return
+        data = await load_user(ctx.bot.db, member.id)
+        data["sp"] = int(data.get("sp", 0)) - amount
+        data["weekly_sp"] = int(data.get("weekly_sp", 0)) - amount
+        await save_user(ctx.bot.db, member.id, data)
+        await ctx.send(embed=self._make_embed("💰 SP Stolen", 0xE74C3C, f"Removed **{amount:,} SP** from {member.mention}. New total: **{data['sp']:,}**"))
 
     @commands.command(name="daily", aliases=["claim"])
     async def daily(self, ctx: commands.Context) -> None:
@@ -433,7 +527,7 @@ class XP(commands.Cog, name="xp"):
             title = "⭐ XP Leaderboard"
             field_name = "XP"
 
-        top = await top_users(interaction.client.db, type, 10)
+        top = await top_users(interaction.client.db, type, 10, weekly=True)
         embed = discord.Embed(color=0xF1C40F)
         embed.set_author(name=title)
 
@@ -445,20 +539,25 @@ class XP(commands.Cog, name="xp"):
         lines = []
         medals = ["🥇", "🥈", "🥉"]
         for i, (user_id, data) in enumerate(top):
-            user = self.bot.get_user(user_id)
-            if user:
-                name = user.display_name[:15]
-                if type == "vc":
-                    mins = data["vc_time"] // 60
-                    val = f"{mins // 60}h {mins % 60}m"
-                elif type == "messages":
-                    val = f"{data['messages']:,}"
-                elif type == "sp":
-                    val = f"{data['sp']:,}"
-                else:
-                    val = f"{data['xp']:,}"
-                medal = medals[i] if i < 3 else f"`{i+1}.`"
-                lines.append(f"{medal} **{name}** — {data['level']} lvl — {val} {field_name}")
+            user = None
+            guild = getattr(interaction, "guild", None)
+            if guild is not None:
+                user = guild.get_member(user_id)
+            if user is None:
+                user = self.bot.get_user(user_id)
+            name = user.display_name[:15] if user is not None and hasattr(user, "display_name") else f"User {user_id}"
+
+            if type == "vc":
+                mins = data["vc_time"] // 60
+                val = f"{mins // 60}h {mins % 60}m"
+            elif type == "messages":
+                val = f"{data['messages']:,}"
+            elif type == "sp":
+                val = f"{data['sp']:,}"
+            else:
+                val = f"{data['xp']:,}"
+            medal = medals[i] if i < 3 else f"`{i+1}.`"
+            lines.append(f"{medal} **{name}** — {data['level']} lvl — {val} {field_name}")
 
         embed.description = "\n".join(lines)
         await interaction.followup.send(embed=embed)

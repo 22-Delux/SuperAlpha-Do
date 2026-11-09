@@ -37,9 +37,18 @@ async def init_db(db: Database) -> None:
             last_message   DOUBLE PRECISION NOT NULL DEFAULT 0,
             vc_start       DOUBLE PRECISION NOT NULL DEFAULT 0,
             daily_claimed  TEXT,
-            streak         INTEGER NOT NULL DEFAULT 0
+            streak         INTEGER NOT NULL DEFAULT 0,
+            weekly_xp      BIGINT NOT NULL DEFAULT 0,
+            weekly_sp      BIGINT NOT NULL DEFAULT 0,
+            weekly_vc_time INTEGER NOT NULL DEFAULT 0,
+            weekly_messages INTEGER NOT NULL DEFAULT 0
         )
     """)
+    for col, coltype in (("weekly_xp", "BIGINT"), ("weekly_sp", "BIGINT"), ("weekly_vc_time", "INTEGER"), ("weekly_messages", "INTEGER")):
+        try:
+            await db.execute(f"ALTER TABLE xp_users ADD COLUMN IF NOT EXISTS {col} {coltype} NOT NULL DEFAULT 0")
+        except Exception:
+            pass
     await db.execute("""
         CREATE TABLE IF NOT EXISTS xp_guild_settings (
             guild_id       BIGINT PRIMARY KEY,
@@ -61,6 +70,10 @@ def _default_user() -> dict:
         "vc_start": 0.0,
         "daily_claimed": None,
         "streak": 0,
+        "weekly_xp": 0,
+        "weekly_sp": 0,
+        "weekly_vc_time": 0,
+        "weekly_messages": 0,
     }
 
 
@@ -78,6 +91,10 @@ async def load_user(db: Database, user_id: int) -> dict:
             "vc_start": float(row["vc_start"] or 0),
             "daily_claimed": row["daily_claimed"],
             "streak": int(row["streak"] or 0),
+            "weekly_xp": int(row.get("weekly_xp", 0) or 0) if hasattr(row, "get") else int(row["weekly_xp"] or 0),
+            "weekly_sp": int(row.get("weekly_sp", 0) or 0) if hasattr(row, "get") else int(row["weekly_sp"] or 0),
+            "weekly_vc_time": int(row.get("weekly_vc_time", 0) or 0) if hasattr(row, "get") else int(row["weekly_vc_time"] or 0),
+            "weekly_messages": int(row.get("weekly_messages", 0) or 0) if hasattr(row, "get") else int(row["weekly_messages"] or 0),
         }
     return _default_user()
 
@@ -88,14 +105,17 @@ async def save_user(db: Database, user_id: int, data: dict) -> None:
     await db.execute(
         """
         INSERT INTO xp_users (user_id, xp, level, sp, messages, vc_time,
-                              commands_used, last_message, vc_start, daily_claimed, streak)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+                              commands_used, last_message, vc_start, daily_claimed, streak,
+                              weekly_xp, weekly_sp, weekly_vc_time, weekly_messages)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
         ON CONFLICT(user_id) DO UPDATE SET
             xp=EXCLUDED.xp, level=EXCLUDED.level, sp=EXCLUDED.sp,
             messages=EXCLUDED.messages, vc_time=EXCLUDED.vc_time,
             commands_used=EXCLUDED.commands_used, last_message=EXCLUDED.last_message,
             vc_start=EXCLUDED.vc_start, daily_claimed=EXCLUDED.daily_claimed,
-            streak=EXCLUDED.streak
+            streak=EXCLUDED.streak,
+            weekly_xp=EXCLUDED.weekly_xp, weekly_sp=EXCLUDED.weekly_sp,
+            weekly_vc_time=EXCLUDED.weekly_vc_time, weekly_messages=EXCLUDED.weekly_messages
         """,
         user_id,
         int(merged["xp"] or 0),
@@ -108,6 +128,10 @@ async def save_user(db: Database, user_id: int, data: dict) -> None:
         float(merged["vc_start"] or 0),
         merged["daily_claimed"],
         int(merged["streak"] or 0),
+        int(merged.get("weekly_xp", 0) or 0),
+        int(merged.get("weekly_sp", 0) or 0),
+        int(merged.get("weekly_vc_time", 0) or 0),
+        int(merged.get("weekly_messages", 0) or 0),
     )
 
 
@@ -116,14 +140,23 @@ def flush_all() -> None:
 
 
 _TOP_COLUMNS = {"xp": "xp", "sp": "sp", "messages": "messages", "vc": "vc_time"}
+_WEEKLY_COLUMNS = {"xp": "weekly_xp", "sp": "weekly_sp", "messages": "weekly_messages", "vc": "weekly_vc_time"}
 
 
-async def top_users(db: Database, key: str, limit: int = 10) -> list[tuple[int, dict]]:
+async def top_users(db: Database, key: str, limit: int = 10, weekly: bool = False, user_ids=None) -> list[tuple[int, dict]]:
     """Top `limit` users ranked by a stat key, as [(user_id, data), ...]."""
-    column = _TOP_COLUMNS.get(key, "xp")
+    cols = _WEEKLY_COLUMNS if weekly else _TOP_COLUMNS
+    column = cols.get(key, cols.get("xp", "xp"))
+    params = []
+    where = ""
+    if user_ids is not None:
+        where = " WHERE user_id = ANY($1)"
+        params.append(list(user_ids))
+    limit_ph = f"${len(params) + 1}"
+    params.append(limit)
     rows = await db.fetch(
-        f"SELECT * FROM xp_users ORDER BY {column} DESC, user_id ASC LIMIT $1",
-        limit,
+        f"SELECT * FROM xp_users{where} ORDER BY {column} DESC, user_id ASC LIMIT {limit_ph}",
+        *params,
     )
     result = []
     for r in rows:
@@ -138,9 +171,17 @@ async def top_users(db: Database, key: str, limit: int = 10) -> list[tuple[int, 
             "vc_start": float(r["vc_start"] or 0),
             "daily_claimed": r["daily_claimed"],
             "streak": int(r["streak"] or 0),
+            "weekly_xp": int(r["weekly_xp"] or 0),
+            "weekly_sp": int(r["weekly_sp"] or 0),
+            "weekly_vc_time": int(r["weekly_vc_time"] or 0),
+            "weekly_messages": int(r["weekly_messages"] or 0),
         }
         result.append((int(r["user_id"]), data))
     return result
+
+
+async def reset_weekly_leaderboard(db: Database) -> None:
+    await db.execute("UPDATE xp_users SET weekly_xp = 0, weekly_sp = 0, weekly_vc_time = 0, weekly_messages = 0")
 
 
 async def is_xp_enabled(db: Database, guild_id: int) -> bool:
