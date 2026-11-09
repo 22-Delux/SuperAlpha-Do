@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from bot.models.xp_store import load_user, save_user
-from bot.core.database import Database
 
 
 _cumulative_xp_cache: dict[int, int] = {}
@@ -37,13 +36,11 @@ def get_level_progress(total_xp: int) -> tuple[int, int, int]:
     return xp_in_level, xp_needed, level
 
 
-async def award_game_xp(db: Database, user_id: int, xp: int, sp: int = 0) -> int:
+def award_game_xp(user_id: int, xp: int, sp: int = 0) -> int:
     """Award XP/SP earned from games. Returns the level after the award."""
-    data = await load_user(db, user_id)
+    data = load_user(user_id)
     data["xp"] += xp
     data["sp"] += sp
-    data["weekly_xp"] = data.get("weekly_xp", 0) + xp
-    data["weekly_sp"] = data.get("weekly_sp", 0) + sp
     data["level"] = level_from_xp(data["xp"])
-    await save_user(db, user_id, data)
+    save_user(user_id, data)
     return data["level"]
