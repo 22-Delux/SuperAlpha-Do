@@ -45,6 +45,31 @@ async def test_cog_loads_when_old_xp_command_names_are_taken(bot):
         await bot.remove_cog("xp")
 
 
+async def test_leaderboard_fetches_name_for_uncached_user(bot, monkeypatch):
+    cog = _cog(bot)
+    ranked_user = make_member(900_001, name="FetchedPlayer")
+    bot.fetch_user = AsyncMock(return_value=ranked_user)
+    bot.db = object()
+    monkeypatch.setattr(
+        xp,
+        "top_users",
+        AsyncMock(
+            return_value=[
+                (ranked_user.id, {"xp": 100, "sp": 0, "messages": 1, "vc_time": 0, "level": 1})
+            ]
+        ),
+    )
+    guild = make_guild()
+    ctx = make_ctx(bot, author=make_member(USER_IDS["member"], guild=guild), guild=guild)
+
+    await cog.leaderboard.callback(cog, ctx, "universal", None)
+
+    description = ctx.send.await_args.kwargs["embed"].description
+    assert "FetchedPlayer" in description
+    assert "User 900001" not in description
+    bot.fetch_user.assert_awaited_once_with(ranked_user.id)
+
+
 async def test_rank_sends_stats_embed(bot):
     cog = _cog(bot)
     data = xp.load_user(USER_IDS["member"])

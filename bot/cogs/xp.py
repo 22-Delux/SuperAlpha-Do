@@ -66,6 +66,19 @@ class XP(commands.Cog, name="xp"):
         self._vc_sessions: dict[int, float] = {}
         self._last_message: dict[int, float] = {}
 
+    async def _leaderboard_name(
+        self, user_id: int, guild: discord.Guild | None = None
+    ) -> str:
+        user = guild.get_member(user_id) if guild is not None else None
+        if user is None:
+            user = self.bot.get_user(user_id)
+        if user is None:
+            try:
+                user = await self.bot.fetch_user(user_id)
+            except discord.NotFound:
+                return f"Unknown user ({user_id})"
+        return user.display_name[:15]
+
     async def cog_load(self) -> None:
         if hasattr(self.bot, "db") and self.bot.db:
             await init_db(self.bot.db)
@@ -291,12 +304,7 @@ class XP(commands.Cog, name="xp"):
         lines = []
         medals = ["🥇", "🥈", "🥉"]
         for i, (user_id, data) in enumerate(top):
-            user = None
-            if ctx.guild is not None:
-                user = ctx.guild.get_member(user_id)
-            if user is None:
-                user = self.bot.get_user(user_id)
-            name = user.display_name[:15] if user is not None and hasattr(user, "display_name") else f"User {user_id}"
+            name = await self._leaderboard_name(user_id, ctx.guild)
 
             if type_key == "vc":
                 mins = data["vc_time"] // 60
@@ -486,13 +494,7 @@ class XP(commands.Cog, name="xp"):
         lines = []
         medals = ["🥇", "🥈", "🥉"]
         for i, (user_id, data) in enumerate(top):
-            user = None
-            guild = getattr(interaction, "guild", None)
-            if guild is not None:
-                user = guild.get_member(user_id)
-            if user is None:
-                user = self.bot.get_user(user_id)
-            name = user.display_name[:15] if user is not None and hasattr(user, "display_name") else f"User {user_id}"
+            name = await self._leaderboard_name(user_id, interaction.guild)
 
             if type == "vc":
                 mins = data["vc_time"] // 60
