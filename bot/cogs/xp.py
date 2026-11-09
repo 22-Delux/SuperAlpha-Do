@@ -8,13 +8,8 @@ imports (``from bot.cogs.xp import award_game_xp``) keep working.
 """
 
 import asyncio
-import inspect
 import random
-import sys
-import types
 import time
-
-import bot.models.xp_store as _xp_store_mod
 from datetime import datetime, timedelta, timezone
 
 import discord
@@ -32,6 +27,7 @@ from bot.models.xp_store import (
     set_level_channel,
     set_xp_enabled,
     top_users,
+    migrate_legacy_data_to_postgres,
 )
 from bot.services.users import GlobalUser, GuildMember
 from bot.services.embeds import leaderboard_embed, xp_embed, brand_embed, COLOR_XP, COLOR_SUCCESS, COLOR_INFO, add_author_brand
@@ -63,27 +59,6 @@ __all__ = [
 ]
 
 
-class _XPModule(types.ModuleType):
-    def __getattr__(self, name):
-        if hasattr(_xp_store_mod, name):
-            return getattr(_xp_store_mod, name)
-        raise AttributeError(name)
-
-    def __setattr__(self, name, value):
-        if name in self.__dict__:
-            super().__setattr__(name, value)
-        elif name in getattr(_xp_store_mod, "__dict__", {}):
-            setattr(_xp_store_mod, name, value)
-        else:
-            super().__setattr__(name, value)
-
-
-try:
-    sys.modules[__name__].__class__ = _XPModule
-except Exception:
-    pass
-
-
 class XP(commands.Cog, name="xp"):
     def __init__(self, bot: commands.Bot) -> None:
         self.bot = bot
@@ -91,7 +66,11 @@ class XP(commands.Cog, name="xp"):
         self._last_message: dict[int, float] = {}
 
     async def cog_load(self) -> None:
-        init_db()
+        if hasattr(self.bot, "db") and self.bot.db:
+            await init_db(self.bot.db)
+            
+            # UNCOMMENT THIS TO MIGRATE LEGACY DATA (Already done by the GOAT Peikaw)
+            # await migrate_legacy_data_to_postgres(self.bot.db)
 
     async def cog_unload(self) -> None:
         self._vc_sessions.clear()
@@ -103,13 +82,14 @@ class XP(commands.Cog, name="xp"):
             return
         if not message.guild:
             return
-        if not is_xp_enabled(message.guild.id):
+        if not await is_xp_enabled(self.bot.db, message.guild.id):
             return
 
         user_id = message.author.id
         now = time.time()
-
-        data = load_user(user_id)
+        
+        # We can track last_message in memory or directly from db object loaded
+        data = await load_user(self.bot.db, user_id)
 
         if now - data["last_message"] < 30:
             return
@@ -126,7 +106,7 @@ class XP(commands.Cog, name="xp"):
         old_level = data["level"]
         data["level"] = level_from_xp(data["xp"])
 
-        save_user(user_id, data)
+        await save_user(self.bot.db, user_id, data)
 
         if data["level"] > old_level:
             try:
@@ -138,7 +118,7 @@ class XP(commands.Cog, name="xp"):
                 embed.add_field(name="XP", value=f"{xp_gain} xp earned", inline=True)
                 embed.add_field(name="SP", value=f"{sp_gain} sp earned", inline=True)
                 channel = None
-                level_channel_id = get_level_channel(message.guild.id)
+                level_channel_id = await get_level_channel(self.bot.db, message.guild.id)
                 if level_channel_id:
                     channel = message.guild.get_channel(level_channel_id)
                 await (channel or message.channel).send(embed=embed)
@@ -156,15 +136,15 @@ class XP(commands.Cog, name="xp"):
             return
         if not member.guild:
             return
-        if not is_xp_enabled(member.guild.id):
+        if not await is_xp_enabled(self.bot.db, member.guild.id):
             return
 
         user_id = member.id
-        data = load_user(user_id)
+        data = await load_user(self.bot.db, user_id)
 
         if after.channel and not before.channel:
             data["vc_start"] = time.time()
-            save_user(user_id, data)
+            await save_user(self.bot.db, user_id, data)
 
         elif before.channel and not after.channel:
             if data["vc_start"] > 0:
@@ -180,33 +160,33 @@ class XP(commands.Cog, name="xp"):
                     data["level"] = level_from_xp(data["xp"])
 
                 data["vc_start"] = 0
-                save_user(user_id, data)
+                await save_user(self.bot.db, user_id, data)
 
-    def _award_command_xp(self, user_id: int) -> None:
-        data = load_user(user_id)
+    async def _award_command_xp(self, user_id: int) -> None:
+        data = await load_user(self.bot.db, user_id)
         xp_gain = random.randint(5, 15)
         sp_gain = random.randint(1, 2)
         data["xp"] += xp_gain
         data["sp"] += sp_gain
         data["commands_used"] += 1
         data["level"] = level_from_xp(data["xp"])
-        save_user(user_id, data)
+        await save_user(self.bot.db, user_id, data)
 
     @commands.Cog.listener()
     async def on_command(self, ctx: commands.Context) -> None:
         if ctx.author.bot:
             return
-        if ctx.guild and not is_xp_enabled(ctx.guild.id):
+        if ctx.guild and not await is_xp_enabled(self.bot.db, ctx.guild.id):
             return
-        self._award_command_xp(ctx.author.id)
+        await self._award_command_xp(ctx.author.id)
 
     @commands.Cog.listener()
     async def on_interaction(self, interaction: discord.Interaction) -> None:
         if interaction.user.bot:
             return
-        if interaction.guild and not is_xp_enabled(interaction.guild.id):
+        if interaction.guild and not await is_xp_enabled(self.bot.db, interaction.guild.id):
             return
-        self._award_command_xp(interaction.user.id)
+        await self._award_command_xp(interaction.user.id)
 
     def _make_embed(self, title: str, color: int, description: str = "") -> discord.Embed:
         embed = discord.Embed(color=color)
@@ -219,7 +199,7 @@ class XP(commands.Cog, name="xp"):
     async def rank(self, ctx: commands.Context, *, member: discord.Member = None) -> None:
         """View your rank and stats. Usage: alpha rank [user]"""
         member = member or ctx.author
-        data = load_user(member.id)
+        data = await load_user(ctx.bot.db, member.id)
         xp_in_level, xp_needed, level = get_level_progress(data["xp"])
 
         vc_time_min = data["vc_time"] // 60
@@ -261,9 +241,7 @@ class XP(commands.Cog, name="xp"):
             title = "⭐ XP Leaderboard"
             field_name = "XP"
 
-        top = top_users(type_key, 10)
-        if inspect.isawaitable(top):
-            top = await top
+        top = await top_users(ctx.bot.db, type_key, 10)
 
         embed = discord.Embed(color=0xF1C40F)
         embed.set_author(name=title)
@@ -287,12 +265,12 @@ class XP(commands.Cog, name="xp"):
             else:
                 name = user.display_name[:15]
 
-            if type_key == "vc":
+            if type.lower() == "vc":
                 mins = data["vc_time"] // 60
                 val = f"{mins // 60}h {mins % 60}m"
-            elif type_key == "messages":
+            elif type.lower() == "messages":
                 val = f"{data['messages']:,}"
-            elif type_key == "sp":
+            elif type.lower() == "sp":
                 val = f"{data['sp']:,}"
             else:
                 val = f"{data['xp']:,}"
@@ -308,7 +286,7 @@ class XP(commands.Cog, name="xp"):
     async def daily(self, ctx: commands.Context) -> None:
         """Claim your daily SP reward. Usage: alpha daily"""
         user_id = ctx.author.id
-        data = load_user(user_id)
+        data = await load_user(ctx.bot.db, user_id)
 
         now = datetime.now(timezone.utc)
         today = now.strftime("%Y-%m-%d")
@@ -330,7 +308,7 @@ class XP(commands.Cog, name="xp"):
         data["daily_claimed"] = today
         data["streak"] += 1
 
-        save_user(user_id, data)
+        await save_user(ctx.bot.db, user_id, data)
 
         embed = discord.Embed(color=0x2ECC71)
         embed.set_author(name="💰 Daily Claimed!")
@@ -359,18 +337,18 @@ class XP(commands.Cog, name="xp"):
             await ctx.send(embed=embed)
             return
 
-        sender_data = load_user(ctx.author.id)
+        sender_data = await load_user(ctx.bot.db, ctx.author.id)
         if sender_data["sp"] < amount:
             embed = self._make_embed("❌ Insufficient SP", 0xE74C3C, f"You only have **{sender_data['sp']:,} SP**")
             await ctx.send(embed=embed)
             return
 
         sender_data["sp"] -= amount
-        save_user(ctx.author.id, sender_data)
+        await save_user(ctx.bot.db, ctx.author.id, sender_data)
 
-        receiver_data = load_user(member.id)
+        receiver_data = await load_user(ctx.bot.db, member.id)
         receiver_data["sp"] += amount
-        save_user(member.id, receiver_data)
+        await save_user(ctx.bot.db, member.id, receiver_data)
 
         embed = discord.Embed(color=0x2ECC71)
         embed.set_author(name="💸 SP Transferred")
@@ -385,7 +363,7 @@ class XP(commands.Cog, name="xp"):
             await ctx.send(embed=embed)
             return
 
-        user_data = load_user(ctx.author.id)
+        user_data = await load_user(ctx.bot.db, ctx.author.id)
         if user_data["sp"] < amount:
             embed = self._make_embed("❌ Insufficient SP", 0xE74C3C, f"You only have **{user_data['sp']:,} SP**")
             await ctx.send(embed=embed)
@@ -404,17 +382,17 @@ class XP(commands.Cog, name="xp"):
             embed.set_author(name="😢 You Lost!")
             embed.description = f"You lost **{amount:,} SP**. Now at **{user_data['sp']:,} SP**"
 
-        save_user(ctx.author.id, user_data)
+        await save_user(ctx.bot.db, ctx.author.id, user_data)
         await ctx.send(embed=embed)
 
     @commands.command(name="work")
     @commands.cooldown(1, 3600, commands.BucketType.user)
     async def work(self, ctx: commands.Context) -> None:
         """Work to earn SP (1 hour cooldown). Usage: alpha work"""
-        user_data = load_user(ctx.author.id)
+        user_data = await load_user(ctx.bot.db, ctx.author.id)
         reward = random.randint(50, 200)
         user_data["sp"] += reward
-        save_user(ctx.author.id, user_data)
+        await save_user(ctx.bot.db, ctx.author.id, user_data)
 
         embed = discord.Embed(color=0x3498DB)
         embed.set_author(name="💼 Work Complete!")
@@ -426,7 +404,7 @@ class XP(commands.Cog, name="xp"):
     async def slash_rank(self, interaction: discord.Interaction, member: discord.Member = None) -> None:
         await interaction.response.defer()
         member = member or interaction.user
-        data = load_user(member.id)
+        data = await load_user(interaction.client.db, member.id)
         xp_in_level, xp_needed, level = get_level_progress(data["xp"])
 
         embed = discord.Embed(color=0x9B59B6)
@@ -463,9 +441,7 @@ class XP(commands.Cog, name="xp"):
             title = "⭐ XP Leaderboard"
             field_name = "XP"
 
-        top = top_users(type, 10)
-        if inspect.isawaitable(top):
-            top = await top
+        top = await top_users(interaction.client.db, type, 10)
         embed = discord.Embed(color=0xF1C40F)
         embed.set_author(name=title)
 
@@ -507,7 +483,7 @@ class XP(commands.Cog, name="xp"):
     async def levelchannel(self, ctx: commands.Context, action: str = None, channel: discord.TextChannel = None) -> None:
         """Set the channel for level-up messages. Usage: alpha levelchannel [set #channel|off|status]"""
         if not action:
-            current = get_level_channel(ctx.guild.id)
+            current = await get_level_channel(ctx.bot.db, ctx.guild.id)
             if current:
                 ch = ctx.guild.get_channel(current)
                 desc = f"Level-up messages are sent to **{ch.mention if ch else f'<#{current}>'}**."
@@ -526,14 +502,14 @@ class XP(commands.Cog, name="xp"):
                 embed = self._make_embed("❌ Missing Channel", 0xE74C3C, "Usage: `alpha levelchannel set #channel`")
                 await ctx.send(embed=embed)
                 return
-            set_level_channel(ctx.guild.id, channel.id)
+            await set_level_channel(ctx.bot.db, ctx.guild.id, channel.id)
             embed = discord.Embed(color=0x2ECC71)
             embed.set_author(name="✅ Level-Up Channel Set")
             embed.description = f"Level-up messages will now be sent to **{channel.mention}**."
             await ctx.send(embed=embed)
 
         elif action in ["off", "disable", "none", "clear", "reset"]:
-            set_level_channel(ctx.guild.id, None)
+            await set_level_channel(ctx.bot.db, ctx.guild.id, None)
             embed = discord.Embed(color=0x95A5A6)
             embed.set_author(name="🔕 Level-Up Channel Cleared")
             embed.description = "Level-up messages will be sent where the user last chatted."
@@ -554,7 +530,7 @@ class XP(commands.Cog, name="xp"):
     async def xpsystem(self, ctx: commands.Context, action: str = None) -> None:
         """Enable/disable XP system. Usage: alpha xpsystem [enable|disable|status]"""
         if not action:
-            enabled = is_xp_enabled(ctx.guild.id)
+            enabled = await is_xp_enabled(ctx.bot.db, ctx.guild.id)
             status = "✅ Enabled" if enabled else "❌ Disabled"
             embed = discord.Embed(color=0x9B59B6)
             embed.set_author(name="📊 XP System Status")
@@ -565,14 +541,14 @@ class XP(commands.Cog, name="xp"):
         action = action.lower()
 
         if action in ["enable", "on", "true", "1", "yes"]:
-            set_xp_enabled(ctx.guild.id, True)
+            await set_xp_enabled(ctx.bot.db, ctx.guild.id, True)
             embed = discord.Embed(color=0x2ECC71)
             embed.set_author(name="✅ XP System Enabled")
             embed.description = "XP/Level system has been **enabled** for this server."
             await ctx.send(embed=embed)
 
         elif action in ["disable", "off", "false", "0", "no"]:
-            set_xp_enabled(ctx.guild.id, False)
+            await set_xp_enabled(ctx.bot.db, ctx.guild.id, False)
             embed = discord.Embed(color=0xE74C3C)
             embed.set_author(name="❌ XP System Disabled")
             embed.description = "XP/Level system has been **disabled** for this server."
@@ -588,18 +564,18 @@ class XP(commands.Cog, name="xp"):
             embed = self._make_embed("❌ Permission Denied", 0xE74C3C, "You need **Administrator** permission to use this command.")
             await ctx.send(embed=embed)
 
-    @commands.command(name="xpgrant", hidden=True)
+    @commands.command(name="addxp", aliases=["givexp", "grantxp"], hidden=True)
     @commands.is_owner()
     async def addxp(self, ctx: commands.Context, member: discord.Member, amount: int) -> None:
-        """[Owner] Add or remove XP for a user. Usage: alpha xpgrant <user> <amount>"""
+        """[Owner] Add or remove XP for a user. Usage: alpha addxp <user> <amount>"""
         if amount == 0:
             embed = self._make_embed("❌ Invalid Amount", 0xE74C3C, "Amount must not be zero")
             await ctx.send(embed=embed)
             return
 
-        old_data = load_user(member.id)
+        old_data = await load_user(ctx.bot.db, member.id)
         old_xp = old_data["xp"]
-        new_level = award_game_xp(member.id, amount)
+        new_level = await award_game_xp(ctx.bot.db, member.id, amount)
         new_xp = old_xp + amount
 
         embed = discord.Embed(color=0x2ECC71 if amount > 0 else 0xE74C3C)
