@@ -109,8 +109,8 @@ async def test_xp_xpsystem_denied_for_member(xp_bot):
         await cmd.can_run(ctx)
 
 
-async def test_xp_addxp_owner_only(xp_bot):
-    cmd = xp_bot.get_command("addxp")
+async def test_xp_xpgrant_owner_only(xp_bot):
+    cmd = xp_bot.get_command("xpgrant")
     guild = make_guild()
     owner = make_member(USER_IDS["owner"], guild=guild, permissions=make_permissions(administrator=True))
     admin = make_member(USER_IDS["admin"], guild=guild, permissions=make_permissions(administrator=True))

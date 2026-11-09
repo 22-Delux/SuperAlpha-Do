@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from unittest.mock import AsyncMock
 
+from discord.ext import commands
+
 import bot.cogs.xp as xp
 from bot.cogs.xp import XP
 
@@ -21,6 +23,23 @@ from helpers import (
 
 def _cog(bot):
     return XP(bot)
+
+
+async def test_cog_loads_when_addxp_name_is_taken(bot):
+    async def existing_addxp(ctx):
+        pass
+
+    existing_command = commands.Command(existing_addxp, name="addxp")
+    bot.add_command(existing_command)
+
+    await bot.add_cog(XP(bot))
+    try:
+        assert bot.get_cog("xp") is not None
+        assert bot.get_command("addxp") is existing_command
+        assert bot.get_command("xpgrant") is not None
+        assert bot.tree.get_command("leaderboard") is not None
+    finally:
+        await bot.remove_cog("xp")
 
 
 async def test_rank_sends_stats_embed(bot):
