@@ -40,6 +40,7 @@ The bot supports both prefix commands (`alpha <command>`) and slash commands (`/
 | `alpha logsetup` | Prefix | Administrator | Setup logging channel |
 | `alpha logdisable` | Prefix | Administrator | Disable logging |
 | `alpha logconfig` | Prefix | Administrator | View logging config |
+| `alpha hist` / `alpha journalhistory` | Prefix | - | View recent commands |
 
 ## Music (Premium)
 
@@ -84,7 +85,7 @@ The bot supports both prefix commands (`alpha <command>`) and slash commands (`/
 | Command | Type | Permission | Description |
 |---------|------|------------|-------------|
 | `alpha rank` or `alpha level` | Prefix | - | Check your rank |
-| `alpha leaderboard` or `alpha lb` | Prefix | - | View server leaderboard |
+| `alpha leaderboard` / `/leaderboard` or `alpha lb` | Prefix/Slash | - | View server leaderboard |
 | `alpha levelchannel` | Prefix | Administrator | Set level-up channel |
 
 ## Utility & Info

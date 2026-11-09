@@ -603,9 +603,9 @@ class Journal(commands.Cog, name="journal"):
         return embed
 
     # ── history ────────────────────────────────────────────────────────────────
-    @commands.command(name="history", aliases=["hist"])
+    @commands.command(name="journalhistory", aliases=["hist"])
     async def history(self, ctx: commands.Context, count: int = HISTORY_SHOW) -> None:
-        """Show your recent commands with line numbers. Usage: alpha history [count]"""
+        """Show your recent commands with line numbers. Usage: alpha hist [count]"""
         rows = _hist_recent(ctx.author.id, count)
         prefix = str(getattr(ctx, "prefix", "alpha")).strip() or "alpha"
         if not rows:

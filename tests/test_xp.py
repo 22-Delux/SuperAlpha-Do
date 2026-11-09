@@ -25,17 +25,20 @@ def _cog(bot):
     return XP(bot)
 
 
-async def test_cog_loads_when_addxp_name_is_taken(bot):
+async def test_cog_loads_when_old_xp_command_names_are_taken(bot):
     async def existing_addxp(ctx):
         pass
 
-    existing_command = commands.Command(existing_addxp, name="addxp")
+    existing_command = commands.Command(
+        existing_addxp, name="givexp", aliases=["addxp", "grantxp"]
+    )
     bot.add_command(existing_command)
 
     await bot.add_cog(XP(bot))
     try:
         assert bot.get_cog("xp") is not None
         assert bot.get_command("addxp") is existing_command
+        assert bot.get_command("givexp") is existing_command
         assert bot.get_command("xpgrant") is not None
         assert bot.tree.get_command("leaderboard") is not None
     finally:

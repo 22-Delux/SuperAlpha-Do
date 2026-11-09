@@ -595,7 +595,7 @@ class XP(commands.Cog, name="xp"):
             embed = self._make_embed("❌ Permission Denied", 0xE74C3C, "You need **Administrator** permission to use this command.")
             await ctx.send(embed=embed)
 
-    @commands.command(name="xpgrant", aliases=["givexp", "grantxp"], hidden=True)
+    @commands.command(name="xpgrant", hidden=True)
     @commands.is_owner()
     async def addxp(self, ctx: commands.Context, member: discord.Member, amount: int) -> None:
         """[Owner] Add or remove XP for a user. Usage: alpha xpgrant <user> <amount>"""

@@ -43,6 +43,16 @@ Optional:
 - `LAVALINK_SECURE` - `true`/`false` for the single-node override (default `true`)
 - `LAVALINK_NODE_RETRIES` - Reconnect attempts per health check (default `1`)
 
+### PostgreSQL permissions
+
+The role used by `DB_URL` needs permission to create XP tables in PostgreSQL's
+`public` schema. Run this as the database/schema owner, replacing `bot_role`
+with the username from `DB_URL`:
+
+```sql
+GRANT USAGE, CREATE ON SCHEMA public TO bot_role;
+```
+
 ### Music backend
 
 Music is played by **Lavalink v4** through [Wavelink](https://github.com/PythonistaGuild/Wavelink).
