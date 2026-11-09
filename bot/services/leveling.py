@@ -42,6 +42,8 @@ async def award_game_xp(db: Database, user_id: int, xp: int, sp: int = 0) -> int
     data = await load_user(db, user_id)
     data["xp"] += xp
     data["sp"] += sp
+    data["weekly_xp"] = data.get("weekly_xp", 0) + xp
+    data["weekly_sp"] = data.get("weekly_sp", 0) + sp
     data["level"] = level_from_xp(data["xp"])
     await save_user(db, user_id, data)
     return data["level"]

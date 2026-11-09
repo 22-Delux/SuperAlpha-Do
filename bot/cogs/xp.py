@@ -122,6 +122,8 @@ class XP(commands.Cog, name="xp"):
 
         data["xp"] += xp_gain
         data["sp"] += sp_gain
+        data["weekly_xp"] = data.get("weekly_xp", 0) + xp_gain
+        data["weekly_sp"] = data.get("weekly_sp", 0) + sp_gain
 
         old_level = data["level"]
         data["level"] = level_from_xp(data["xp"])
@@ -177,6 +179,9 @@ class XP(commands.Cog, name="xp"):
                     data["xp"] += xp_gain
                     data["sp"] += sp_gain
                     data["vc_time"] += int(elapsed)
+                    data["weekly_xp"] = data.get("weekly_xp", 0) + xp_gain
+                    data["weekly_sp"] = data.get("weekly_sp", 0) + sp_gain
+                    data["weekly_vc_time"] = data.get("weekly_vc_time", 0) + int(elapsed)
                     data["level"] = level_from_xp(data["xp"])
 
                 data["vc_start"] = 0
@@ -188,6 +193,8 @@ class XP(commands.Cog, name="xp"):
         sp_gain = random.randint(1, 2)
         data["xp"] += xp_gain
         data["sp"] += sp_gain
+        data["weekly_xp"] = data.get("weekly_xp", 0) + xp_gain
+        data["weekly_sp"] = data.get("weekly_sp", 0) + sp_gain
         data["commands_used"] += 1
         data["level"] = level_from_xp(data["xp"])
         await save_user(self.bot.db, user_id, data)
@@ -307,66 +314,6 @@ class XP(commands.Cog, name="xp"):
         embed.description = "\n".join(lines)
         embed.set_footer(text=f"Showing top {len(top)} | Universal resets Monday 00:00 IST")
         await ctx.send(embed=embed)
-
-    async def _is_superuser(self, user) -> bool:
-        try:
-            if getattr(self.bot, "owner_ids", None) and user.id in self.bot.owner_ids:
-                return True
-            if getattr(self.bot, "owner_id", None) == user.id:
-                return True
-            return await self.bot.is_owner(user)
-        except Exception:
-            return False
-
-    @commands.command(name="givexp", aliases=["addxp", "grantxp"])
-    async def givexp(self, ctx: commands.Context, member: discord.Member, amount: int) -> None:
-        """Give XP to a user (superuser only). Usage: alpha givexp @user <amount>"""
-        if not await self._is_superuser(ctx.author):
-            await ctx.send(embed=self._make_embed("❌ Permission Denied", 0xE74C3C, "Superuser only."))
-            return
-        data = await load_user(ctx.bot.db, member.id)
-        data["xp"] = int(data.get("xp", 0)) + amount
-        data["weekly_xp"] = int(data.get("weekly_xp", 0)) + amount
-        data["level"] = level_from_xp(data["xp"])
-        await save_user(ctx.bot.db, member.id, data)
-        await ctx.send(embed=self._make_embed("⭐ XP Given", 0x2ECC71, f"Gave **{amount:,} XP** to {member.mention}. New total: **{data['xp']:,}**"))
-
-    @commands.command(name="givesp", aliases=["addsp", "grantsp"])
-    async def givesp(self, ctx: commands.Context, member: discord.Member, amount: int) -> None:
-        """Give SP to a user (superuser only). Usage: alpha givesp @user <amount>"""
-        if not await self._is_superuser(ctx.author):
-            await ctx.send(embed=self._make_embed("❌ Permission Denied", 0xE74C3C, "Superuser only."))
-            return
-        data = await load_user(ctx.bot.db, member.id)
-        data["sp"] = int(data.get("sp", 0)) + amount
-        data["weekly_sp"] = int(data.get("weekly_sp", 0)) + amount
-        await save_user(ctx.bot.db, member.id, data)
-        await ctx.send(embed=self._make_embed("💰 SP Given", 0x2ECC71, f"Gave **{amount:,} SP** to {member.mention}. New total: **{data['sp']:,}**"))
-
-    @commands.command(name="stealxp", aliases=["removexp", "takexp"])
-    async def stealxp(self, ctx: commands.Context, member: discord.Member, amount: int) -> None:
-        """Steal/remove XP from a user (superuser only). Usage: alpha stealxp @user <amount>"""
-        if not await self._is_superuser(ctx.author):
-            await ctx.send(embed=self._make_embed("❌ Permission Denied", 0xE74C3C, "Superuser only."))
-            return
-        data = await load_user(ctx.bot.db, member.id)
-        data["xp"] = int(data.get("xp", 0)) - amount
-        data["weekly_xp"] = int(data.get("weekly_xp", 0)) - amount
-        data["level"] = level_from_xp(max(0, data["xp"]))
-        await save_user(ctx.bot.db, member.id, data)
-        await ctx.send(embed=self._make_embed("⭐ XP Stolen", 0xE74C3C, f"Removed **{amount:,} XP** from {member.mention}. New total: **{data['xp']:,}**"))
-
-    @commands.command(name="stealsp", aliases=["removesp", "taksp"])
-    async def stealsp(self, ctx: commands.Context, member: discord.Member, amount: int) -> None:
-        """Steal/remove SP from a user (superuser only). Usage: alpha stealsp @user <amount>"""
-        if not await self._is_superuser(ctx.author):
-            await ctx.send(embed=self._make_embed("❌ Permission Denied", 0xE74C3C, "Superuser only."))
-            return
-        data = await load_user(ctx.bot.db, member.id)
-        data["sp"] = int(data.get("sp", 0)) - amount
-        data["weekly_sp"] = int(data.get("weekly_sp", 0)) - amount
-        await save_user(ctx.bot.db, member.id, data)
-        await ctx.send(embed=self._make_embed("💰 SP Stolen", 0xE74C3C, f"Removed **{amount:,} SP** from {member.mention}. New total: **{data['sp']:,}**"))
 
     @commands.command(name="daily", aliases=["claim"])
     async def daily(self, ctx: commands.Context) -> None:
@@ -667,6 +614,22 @@ class XP(commands.Cog, name="xp"):
         embed.description = (
             f"**{member.mention}** — **{old_xp:,} → {new_xp:,} XP** (`{amount:+d}`) · **Level {new_level}**"
         )
+        await ctx.send(embed=embed)
+
+    @commands.command(name="addsp", aliases=["givesp", "grantsp", "stealsp", "removesp"], hidden=True)
+    @commands.is_owner()
+    async def addsp(self, ctx: commands.Context, member: discord.Member, amount: int) -> None:
+        """[Owner] Add or remove SP for a user. Usage: alpha addsp <user> <amount>"""
+        if amount == 0:
+            await ctx.send(embed=self._make_embed("❌ Invalid Amount", 0xE74C3C, "Amount must not be zero"))
+            return
+        data = await load_user(ctx.bot.db, member.id)
+        data["sp"] += amount
+        data["weekly_sp"] = data.get("weekly_sp", 0) + amount
+        await save_user(ctx.bot.db, member.id, data)
+        embed = discord.Embed(color=0x2ECC71 if amount > 0 else 0xE74C3C)
+        embed.set_author(name="✅ SP Updated" if amount > 0 else "❌ SP Removed")
+        embed.description = f"**{member.mention}** — **{data['sp'] - amount:,} → {data['sp']:,} SP** (`{amount:+d}`)"
         await ctx.send(embed=embed)
 
     @addxp.error
