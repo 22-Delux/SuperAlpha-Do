@@ -264,34 +264,24 @@ class XP(commands.Cog, name="xp"):
         await ctx.send(embed=embed)
 
     @commands.command(name="leaderboard", aliases=["lb", "top"])
-    async def leaderboard(self, ctx: commands.Context, first: str = "xp", second: str = None) -> None:
-        scope = "universal"
-        type_key = "xp"
-        for val in (first, second):
-            if val is None:
-                continue
-            low = str(val).lower()
-            if low in ("universal", "guild", "server", "global"):
-                scope = "universal" if low in ("universal", "global") else "guild"
-                if low == "server":
-                    scope = "guild"
-            elif low in ("xp", "sp", "messages", "vc"):
-                type_key = low
-
-        weekly = scope == "universal"
-        user_ids = None
-        if scope == "guild" and ctx.guild is not None:
-            user_ids = [m.id for m in getattr(ctx.guild, "members", []) if not getattr(m, "bot", False)]
-            if not user_ids:
-                user_ids = None
-
-        top = await top_users(ctx.bot.db, type_key, 10, weekly=weekly, user_ids=user_ids)
-
-        field_name = {"sp": "SP", "messages": "Messages", "vc": "VC Time", "xp": "XP"}[type_key]
-        if scope == "universal":
-            title = "🌍 Universal Leaderboard — " + field_name
+    async def leaderboard(self, ctx: commands.Context, type: str = "xp") -> None:
+        """View the leaderboard. Usage: alpha leaderboard [xp|sp|messages|vc]"""
+        type_key = type.lower()
+        if type_key == "sp":
+            title = "💰 SP Leaderboard"
+            field_name = "SP"
+        elif type_key == "messages":
+            title = "💬 Messages Leaderboard"
+            field_name = "Messages"
+        elif type_key == "vc":
+            title = "🎤 VC Time Leaderboard"
+            field_name = "VC Time"
         else:
-            title = "🏠 Guild Leaderboard — " + field_name
+            type_key = "xp"
+            title = "⭐ XP Leaderboard"
+            field_name = "XP"
+
+        top = await top_users(ctx.bot.db, type_key, 10)
 
         embed = discord.Embed(color=0xF1C40F)
         embed.set_author(name=title)
@@ -305,13 +295,12 @@ class XP(commands.Cog, name="xp"):
         medals = ["🥇", "🥈", "🥉"]
         for i, (user_id, data) in enumerate(top):
             name = await self._leaderboard_name(user_id, ctx.guild)
-
-            if type_key == "vc":
+            if type.lower() == "vc":
                 mins = data["vc_time"] // 60
                 val = f"{mins // 60}h {mins % 60}m"
-            elif type_key == "messages":
+            elif type.lower() == "messages":
                 val = f"{data['messages']:,}"
-            elif type_key == "sp":
+            elif type.lower() == "sp":
                 val = f"{data['sp']:,}"
             else:
                 val = f"{data['xp']:,}"
@@ -320,7 +309,7 @@ class XP(commands.Cog, name="xp"):
             lines.append(f"{medal} **{name}** — {data['level']} lvl — {val} {field_name}")
 
         embed.description = "\n".join(lines)
-        embed.set_footer(text=f"Showing top {len(top)} | Universal resets Monday 00:00 IST")
+        embed.set_footer(text=f"Showing top {len(top)} | Use 'alpha lb sp/messages/vc' for different rankings")
         await ctx.send(embed=embed)
 
     @commands.command(name="daily", aliases=["claim"])
@@ -482,7 +471,7 @@ class XP(commands.Cog, name="xp"):
             title = "⭐ XP Leaderboard"
             field_name = "XP"
 
-        top = await top_users(interaction.client.db, type, 10, weekly=True)
+        top = await top_users(interaction.client.db, type, 10)
         embed = discord.Embed(color=0xF1C40F)
         embed.set_author(name=title)
 

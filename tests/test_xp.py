@@ -62,7 +62,7 @@ async def test_leaderboard_fetches_name_for_uncached_user(bot, monkeypatch):
     guild = make_guild()
     ctx = make_ctx(bot, author=make_member(USER_IDS["member"], guild=guild), guild=guild)
 
-    await cog.leaderboard.callback(cog, ctx, "universal", None)
+    await cog.leaderboard.callback(cog, ctx, "xp")
 
     description = ctx.send.await_args.kwargs["embed"].description
     assert "FetchedPlayer" in description
